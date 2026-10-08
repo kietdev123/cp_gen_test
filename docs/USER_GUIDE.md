@@ -30,13 +30,13 @@
 2. Vào **Xuất bộ đề**, xem trước cây thư mục.
 3. Bấm **Xuất Themis ZIP** và chọn vị trí lưu.
 4. Mỗi testcase được ghi thành `BAI/TESTxx/BAI.INP` và `BAI/TESTxx/BAI.OUT`.
-5. Có thể xuất đề thành Markdown hoặc PDF. DOCX cần Pandoc.
+5. Có thể xuất đề thành Markdown, PDF hoặc DOCX. Công thức toán được chuyển thành định dạng tài liệu tương ứng.
 
 ## 5. Cài AI, compiler và giao diện
 
 - **Cài đặt → Trợ lý AI**: chọn OpenAI/Gemini, model và lưu/xóa key. Không có request tự động.
 - **Cài đặt → Compiler C++**: xem trạng thái tự tìm `g++` hoặc chọn `g++.exe`.
-- **Cài đặt → Pandoc**: chọn `pandoc.exe` nếu không nằm trong PATH.
+- **Xuất tài liệu**: Pandoc, Typst và Roboto đã đi kèm ứng dụng, không cần cấu hình thêm.
 - Dùng biểu tượng mặt trăng/mặt trời trên thanh trên cùng để đổi sáng/tối.
 
 ## Lưu ý an toàn

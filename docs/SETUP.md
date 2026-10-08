@@ -2,23 +2,27 @@
 
 ## Dùng ứng dụng Windows
 
-1. Giải nén `CP-Test-Studio-0.1.0-win-x64.zip`.
-2. Chạy `CP Test Studio.exe`.
+1. Chạy file `CP-Test-Studio-0.1.0-win-x64.msi` và hoàn tất cài đặt.
+2. Mở CP Test Studio từ Start hoặc shortcut trên Desktop.
 3. Có thể bỏ qua API AI ở màn hình chào mừng. Ứng dụng mở được khi chưa có API key.
 4. Dự án và dữ liệu được lưu cục bộ trong thư mục user data của Electron. Dùng nút **Mở thư mục** trong dự án để xem tệp trên máy.
+
+Gói ZIP portable vẫn được tạo bằng `npm run dist:win` nếu không muốn cài MSI.
 
 ## Môi trường phát triển
 
 - Windows 10/11 64-bit.
 - Node.js 22 trở lên và npm.
 - MinGW-w64 được chuẩn bị tự động khi chạy source và được đóng gói cùng app Windows; người cài app không cần cài riêng compiler.
-- Pandoc là tùy chọn, chỉ cần để xuất DOCX.
+- Pandoc, Typst và Roboto được tải tự động khi chạy source; ứng dụng MSI đóng gói sẵn các công cụ này.
 - API key OpenAI hoặc Google Gemini là tùy chọn, chỉ cần cho chức năng AI.
 
 ```powershell
 npm install
 npm run dev
 ```
+
+Nếu terminal báo không tìm thấy lệnh `npm`, dùng lệnh source có sẵn trong môi trường máy này: `node .tools/npm/bin/npm-cli.js run dev`.
 
 Để biên dịch TypeScript và tạo bundle production:
 
@@ -33,7 +37,15 @@ npm run build
 npm run dist:win
 ```
 
-Tệp build nằm trong `release/`. Dùng `npm run dist:win:installer` trên Windows nếu cần installer NSIS.
+Lệnh trên tạo ZIP portable. Để tạo một installer MSI x64 duy nhất trên Windows:
+
+```powershell
+npm run dist:win:installer
+```
+
+Tệp MSI sẽ nằm trong `release/`.
+
+Installer mở wizard cài đặt, cài theo tài khoản Windows hiện tại và tạo shortcut Start/Desktop; không yêu cầu quyền quản trị.
 
 ## Compiler C++
 
@@ -49,6 +61,6 @@ Trong **Cài đặt → Trợ lý AI**, chọn provider và model, dán API key 
 
 Key và nội dung dự án không được ghi vào log ứng dụng. Tác vụ AI cần Internet và chịu điều khoản/chi phí của nhà cung cấp API.
 
-## Cài Pandoc
+## Xuất tài liệu
 
-Cài Pandoc và để `pandoc.exe` trong `PATH`, hoặc chọn file trong **Cài đặt → Pandoc**. Nếu không cài, Markdown, PDF và Themis vẫn dùng được; DOCX sẽ báo hướng dẫn.
+Khi chạy source, `npm run dev` tự tải các bản Pandoc/Typst cố định và kiểm tra SHA-256, sau đó lưu trong `.tools/document-export/`. Tệp này không được đưa vào Git. Khi tạo ZIP/MSI, electron-builder chép chúng vào tài nguyên ứng dụng; người dùng cuối không cần cài Pandoc, Typst hoặc font Roboto. DOCX dùng template Word và PDF dùng Typst để hiển thị công thức TeX.

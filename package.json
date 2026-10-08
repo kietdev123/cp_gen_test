@@ -7,21 +7,20 @@
   "license": "MIT",
   "scripts": {
     "dev": "electron-vite dev",
-    "predev": "npm run prepare:mingw",
+    "predev": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-mingw.ps1 && powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-document-tools.ps1",
     "prepare:mingw": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-mingw.ps1",
+    "prepare:document-tools": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-document-tools.ps1",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.main.json && tsc --noEmit -p tsconfig.preload.json",
     "build": "electron-vite build",
-    "dist:win": "npm run prepare:mingw && electron-builder --win zip --x64",
-    "dist:win:installer": "npm run prepare:mingw && electron-builder --win nsis --x64"
+    "dist:win": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-mingw.ps1 && powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-document-tools.ps1 && electron-builder --win zip --x64",
+    "dist:win:installer": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-mingw.ps1 && powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-document-tools.ps1 && electron-builder --win msi --x64"
   },
   "dependencies": {
     "@fontsource/roboto": "^5.3.0",
     "@google/genai": "^1.25.0",
     "archiver": "^7.0.1",
-    "docx": "^9.9.0",
     "katex": "^0.16.11",
     "lucide-react": "^0.468.0",
-    "marked": "^18.1.0",
     "openai": "^6.16.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
@@ -29,7 +28,6 @@
     "rehype-katex": "^7.0.1",
     "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0",
-    "sanitize-html": "^2.18.0",
     "zustand": "^5.0.9"
   },
   "devDependencies": {
@@ -37,7 +35,6 @@
     "@types/node": "^22.15.30",
     "@types/react": "^19.2.5",
     "@types/react-dom": "^19.2.3",
-    "@types/sanitize-html": "^2.16.2",
     "@vitejs/plugin-react": "^5.1.1",
     "electron": "^39.2.7",
     "electron-builder": "^26.0.12",
@@ -62,6 +59,21 @@
         "filter": [
           "**/*"
         ]
+      },
+      {
+        "from": ".tools/document-export",
+        "to": "tools/document-export",
+        "filter": [
+          "pandoc.exe",
+          "typst.exe",
+          "reference.docx",
+          "pandoc-normalize.lua",
+          "fonts/Roboto.ttf",
+          "PANDOC-COPYING.md",
+          "TYPST-LICENSE.txt",
+          "ROBOTO-OFL.txt",
+          "THIRD-PARTY-NOTICES.txt"
+        ]
       }
     ],
     "win": {
@@ -70,9 +82,12 @@
       ],
       "artifactName": "CP-Test-Studio-${version}-win-${arch}.${ext}"
     },
-    "nsis": {
+    "msi": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "runAfterFinish": true
     }
   }
 }

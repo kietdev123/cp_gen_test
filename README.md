@@ -11,6 +11,8 @@ npm install
 npm run dev
 ```
 
+Nếu `npm` chưa nằm trong `PATH` trên máy Windows này, chạy source bằng `node .tools/npm/bin/npm-cli.js run dev`.
+
 Kiểm tra và build bản production:
 
 ```powershell
@@ -19,7 +21,7 @@ npm run build
 npm run dist:win
 ```
 
-`npm run dist:win` tạo gói ZIP Windows x64 trong `release/`; giải nén và chạy `CP Test Studio.exe`. Có thể tạo installer NSIS trên Windows bằng `npm run dist:win:installer`. Gói Windows tự chuẩn bị và chứa MinGW-w64, nên người dùng chỉ cần cài ứng dụng để biên dịch C++.
+`npm run dist:win` tạo gói ZIP Windows x64 trong `release/`. `npm run dist:win:installer` tạo một file MSI. Cả hai lệnh tự chuẩn bị MinGW-w64, Pandoc, Typst và Roboto để người dùng chỉ cần cài ứng dụng.
 
 Hướng dẫn chi tiết ở [docs/SETUP.md](docs/SETUP.md), thao tác ở [docs/USER_GUIDE.md](docs/USER_GUIDE.md), checklist thủ công ở [docs/MANUAL_TEST.md](docs/MANUAL_TEST.md).
 
@@ -29,7 +31,7 @@ Hướng dẫn chi tiết ở [docs/SETUP.md](docs/SETUP.md), thao tác ở [doc
 - Soạn đề Markdown, preview và công thức LaTeX; lưu ảnh gốc trong dự án và trích nội dung bằng AI theo yêu cầu.
 - Cấu hình OpenAI hoặc Gemini, mã hóa khóa bằng `safeStorage` của Electron; gọi AI phân tích đề, gợi ý generator và lời giải khi người dùng bấm nút.
 - Viết và biên dịch generator/lời giải C++17 bằng `g++`; tạo testcase theo seed, chạy lời giải trên testcase và lưu stdout thành output.
-- Xuất bộ test ZIP theo `BAI/TESTxx/BAI.INP` và `BAI.OUT`; xuất đề Markdown, PDF hoặc DOCX qua Pandoc.
+- Xuất bộ test ZIP theo `BAI/TESTxx/BAI.INP` và `BAI.OUT`; xuất Markdown, DOCX có công thức Word và PDF bằng Pandoc/Typst.
 - Giao diện tiếng Việt dùng Roboto đóng gói offline, có sáng/tối, thông báo lỗi và trạng thái compiler rõ ràng.
 
 ## Kiến trúc
@@ -45,7 +47,7 @@ Hướng dẫn chi tiết ở [docs/SETUP.md](docs/SETUP.md), thao tác ở [doc
 - Generator nhận seed, số thứ tự testcase và mode qua `argv[1..3]`; app không kèm `testlib.h` và chưa có trình tạo cấu trúc testcase tự động.
 - Chưa có validator trong giao diện, stress differential/brute-force checker, xuất DOCX tùy biến, quản lý nhiều thư mục dự án hay tùy chỉnh tên file Themis.
 - Tác vụ AI phụ thuộc API/key và mô hình/provider bạn cấu hình; AI có thể tạo nội dung sai cần người dùng xem lại.
-- PDF MVP trình bày nội dung đề dạng văn bản Unicode; chưa chuyển toàn bộ cú pháp Markdown/LaTeX thành dàn trang nâng cao.
+- Bố cục tài liệu được tạo từ Markdown và công thức TeX; cần kiểm tra lại khi đề có HTML tùy biến hoặc cú pháp ngoài Markdown chuẩn.
 - Không chạy functional/end-to-end test trong phạm vi bàn giao. Xem [BUILD_REPORT.md](BUILD_REPORT.md) để biết các lệnh build đã chạy.
 
 

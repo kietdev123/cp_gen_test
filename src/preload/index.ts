@@ -18,7 +18,6 @@ const api: AppApi = {
   testAiConnection: (request: AiRequest) => ipcRenderer.invoke('ai:test', request),
   askAi: (request: AiRequest) => ipcRenderer.invoke('ai:ask', request),
   chooseCompiler: () => ipcRenderer.invoke('settings:compiler:choose'),
-  choosePandoc: () => ipcRenderer.invoke('settings:pandoc:choose'),
   compile: (projectId: string, kind: ProgramKind, source: string) => ipcRenderer.invoke('code:compile', projectId, kind, source),
   run: (projectId: string, kind: ProgramKind, input: string, args?: string[], timeoutMs?: number) => ipcRenderer.invoke('code:run', projectId, kind, input, args, timeoutMs),
   generateTests: (projectId: string, count: number, seed: number, mode: string, source: string) => ipcRenderer.invoke('tests:generate', projectId, count, seed, mode, source),

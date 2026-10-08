@@ -35,8 +35,8 @@ Các bước dưới đây dành cho người dùng sau khi build. Không tự �
 - [ ] Chưa chạy solution: Themis ZIP từ chối xuất.
 - [ ] Sau khi các test chạy thành công, xuất ZIP và kiểm tra cấu trúc `BAI/TESTxx/BAI.INP` + `BAI.OUT`.
 - [ ] Xuất Markdown và mở file để xác nhận Unicode.
-- [ ] Xuất PDF; kiểm tra nội dung tiếng Việt.
-- [ ] Không cài Pandoc: DOCX báo cách cấu hình; sau khi chọn Pandoc hợp lệ, xuất DOCX.
+- [ ] Xuất PDF; kiểm tra tiếng Việt, công thức inline/khối và ngắt dòng `<br>`.
+- [ ] Xuất DOCX; xác nhận công thức là Equation có thể chỉnh trong Word và font văn bản là Roboto.
 
 ## Cách nhận biết lỗi
 
@@ -44,4 +44,5 @@ Các bước dưới đây dành cho người dùng sau khi build. Không tự �
 - `g++` không chạy: xác nhận đường dẫn compiler và PATH, mở lại app sau khi sửa PATH.
 - AI lỗi: kiểm tra provider, model, quyền API và kết nối Internet.
 - ZIP thiếu file: xác nhận testcase có trạng thái chạy thành công.
+- DOCX/PDF lỗi: xác nhận thư mục `.tools/document-export/` có Pandoc, Typst, template và font đi kèm.
 - Mã C++ treo: dừng theo timeout; sửa generator/solution rồi chạy lại.

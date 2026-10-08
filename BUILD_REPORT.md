@@ -2,6 +2,13 @@
 
 Ngày build: 2026-10-08
 
+## Cập nhật source xuất tài liệu
+
+- DOCX/PDF chuyển Markdown bằng Pandoc 3.12.1; PDF dùng Typst 0.15.1 và font Roboto. Script chuẩn bị tải binary theo phiên bản ghim, xác minh SHA-256 và đưa license vào tài nguyên ứng dụng.
+- Smoke check từ Markdown tiếng Việt có công thức inline/khối và `<br>`: DOCX có OOXML Equation và line break; PDF hợp lệ khổ A4, đã render để kiểm tra bố cục.
+- `npm run typecheck` và `npm run build` — **exit code 0** sau cập nhật.
+- Cấu hình `npm run dist:win:installer` tạo mục tiêu MSI x64; chưa chạy lệnh này.
+
 ## Kết quả
 
 - Docker Desktop đang chạy Linux engine; Docker image `cp-test-studio-builder` được tạo thành công.
@@ -16,7 +23,7 @@ Ngày build: 2026-10-08
 
 - Chưa mở ứng dụng Windows sau khi đóng gói và chưa chạy kiểm thử chức năng/end-to-end.
 - Chưa gọi API OpenAI/Gemini thật hoặc chạy mã generator/solution của bài thi.
-- Docker tạo gói ZIP portable, không tạo installer NSIS. Muốn installer, chạy `npm run dist:win:installer` trên Windows.
+- Build lịch sử trong Docker chỉ tạo ZIP portable. Source hiện cấu hình `npm run dist:win:installer` để tạo MSI trên Windows; mục tiêu MSI chưa được chạy.
 - Trình nhập mã hiện dùng vùng soạn thảo văn bản thường; chưa có Monaco, tô màu cú pháp hoặc gợi ý mã.
 
 ## Ghi chú build

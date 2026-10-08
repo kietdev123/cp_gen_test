@@ -40,7 +40,6 @@ export interface Settings {
   provider: Provider;
   models: Record<Provider, string>;
   compilerPath: string;
-  pandocPath: string;
   theme: 'light' | 'dark';
 }
 
@@ -84,7 +83,6 @@ export interface AppApi {
   testAiConnection(request: AiRequest): Promise<string>;
   askAi(request: AiRequest): Promise<string>;
   chooseCompiler(): Promise<string | null>;
-  choosePandoc(): Promise<string | null>;
   compile(projectId: string, kind: ProgramKind, source: string): Promise<CompileResult>;
   run(projectId: string, kind: ProgramKind, input: string, args?: string[], timeoutMs?: number): Promise<RunResult>;
   generateTests(projectId: string, count: number, seed: number, mode: string, source: string): Promise<TestCase[]>;

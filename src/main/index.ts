@@ -5,10 +5,6 @@ import { createWriteStream, existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import archiver from 'archiver';
-import { Document, HeadingLevel, Paragraph, Packer, Table, TableCell, TableRow, TextRun } from 'docx';
-import katex from 'katex';
-import { marked, Marked, type Token, type Tokens, type TokenizerAndRendererExtension } from 'marked';
-import sanitizeHtml from 'sanitize-html';
 import OpenAI from 'openai';
 import { GoogleGenAI } from '@google/genai';
 import type { AiRequest, CompileResult, Project, ProgramKind, Provider, RunResult, Settings, TestCase } from '../shared/types';
@@ -17,7 +13,7 @@ const DEFAULT_SETTINGS: Settings = {
   onboardingComplete: false,
   provider: 'openai',
   models: { openai: 'gpt-4.1-mini', gemini: 'gemini-2.5-flash' },
-  compilerPath: '', pandocPath: '', theme: 'light',
+  compilerPath: '', theme: 'light',
 };
 const DEFAULT_GENERATOR = `#include <bits/stdc++.h>
 using namespace std;
@@ -327,10 +323,6 @@ ipcMain.handle('settings:compiler:choose', async () => {
   const result = await dialog.showOpenDialog(mainWindow!, { title: 'Chọn trình biên dịch C++', filters: [{ name: 'Ứng dụng', extensions: ['exe'] }], properties: ['openFile'] });
   return result.canceled ? null : result.filePaths[0];
 });
-ipcMain.handle('settings:pandoc:choose', async () => {
-  const result = await dialog.showOpenDialog(mainWindow!, { title: 'Chọn Pandoc', filters: [{ name: 'Ứng dụng', extensions: ['exe'] }], properties: ['openFile'] });
-  return result.canceled ? null : result.filePaths[0];
-});
 ipcMain.handle('ai:test', async (_event, request: AiRequest) => callAi({ ...request, prompt: 'Trả lời ngắn gọn: kết nối thành công.' }, true));
 ipcMain.handle('ai:ask', async (_event, request: AiRequest) => callAi(request));
 
@@ -420,109 +412,57 @@ function safeFileName(value: string) {
 }
 
 async function createPdf(project: Project): Promise<Buffer> {
-  const mathExtension = (displayMode: boolean): TokenizerAndRendererExtension => {
-    const name = displayMode ? 'mathBlock' : 'mathInline';
-    return {
-      name,
-      level: displayMode ? 'block' : 'inline',
-      start: (source: string) => source.indexOf('$') < 0 ? undefined : source.indexOf('$'),
-      tokenizer: (source: string) => {
-        const match = displayMode ? /^\$\$([\s\S]+?)\$\$(?:\n|$)/.exec(source) : /^\$([^$\n]+)\$/.exec(source);
-        return match ? { type: name, raw: match[0], text: match[1] } : undefined;
-      },
-      renderer: (token: Tokens.Generic) => katex.renderToString(String(token.text ?? ''), { displayMode, throwOnError: false, output: 'html' }),
-    };
-  };
-  const markdown = new Marked({ gfm: true, renderer: { html: ({ text }: Tokens.HTML | Tokens.Tag) => escapeHtml(text) } });
-  markdown.use({ extensions: [mathExtension(true), mathExtension(false)] });
-  const rendered = await markdown.parse(project.statement);
-  const content = sanitizeHtml(rendered, {
-    allowedTags: ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'ul', 'ol', 'li', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'strong', 'em', 'del', 'blockquote', 'pre', 'code', 'hr', 'a', 'br', 'span'],
-    allowedAttributes: { a: ['href', 'title'], code: ['class'], span: ['class', 'aria-hidden'], th: ['align'], td: ['align'] },
-    allowedSchemes: ['http', 'https', 'mailto'],
-  });
-  const katexCssPath = path.join(app.getAppPath(), 'node_modules', 'katex', 'dist', 'katex.min.css');
-  const katexCss = await fs.readFile(katexCssPath, 'utf8').catch(() => '');
-  const html = `<!doctype html><html lang="vi"><meta charset="utf-8"><style>${katexCss}</style><style>
-    @page{size:A4;margin:22mm 20mm}body{font:11pt/1.65 Arial,"Segoe UI",sans-serif;color:#172033}
-    h1,h2,h3,h4{line-height:1.3;margin:1.1em 0 .45em;page-break-after:avoid}h1{font-size:21pt}h2{font-size:16pt}h3{font-size:13pt}
-    p,ul,ol,blockquote,table,pre{margin:.55em 0;orphans:3;widows:3}li{margin:.2em 0}blockquote{border-left:3px solid #ccd5e5;padding-left:12px;color:#536078}
-    table{border-collapse:collapse;width:100%;font-size:10pt}th,td{border:1px solid #b9c3d3;padding:6px 8px;text-align:left}th{background:#edf2ff}
-    pre{white-space:pre-wrap;word-break:break-word;background:#f5f7fa;border:1px solid #e1e6ee;border-radius:4px;padding:9px;font:9pt/1.5 Consolas,monospace}
-    code{font:9pt Consolas,monospace;background:#f1f3f7;padding:1px 3px;border-radius:2px}a{color:#365bb9;text-decoration:underline}hr{border:0;border-top:1px solid #ccd3de}
-  </style><body><h1>${escapeHtml(project.name)}</h1>${content}</body></html>`;
-  const printWindow = new BrowserWindow({ show: false, webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false } });
-  try {
-    await printWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
-    return await printWindow.webContents.printToPDF({ printBackground: true, pageSize: 'A4' });
-  } finally {
-    if (!printWindow.isDestroyed()) printWindow.close();
-  }
-}
-
-type DocxInlineStyle = { bold?: boolean; italics?: boolean; strike?: boolean };
-
-function docxInlineRuns(tokens: Token[] = [], style: DocxInlineStyle = {}): TextRun[] {
-  return tokens.flatMap((token): TextRun[] => {
-    if (token.type === 'strong') return docxInlineRuns(token.tokens, { ...style, bold: true });
-    if (token.type === 'em') return docxInlineRuns(token.tokens, { ...style, italics: true });
-    if (token.type === 'del') return docxInlineRuns(token.tokens, { ...style, strike: true });
-    if (token.type === 'codespan') return [new TextRun({ text: token.text, font: 'Consolas', size: 19, ...style })];
-    if (token.type === 'br') return [new TextRun({ text: '', break: 1, ...style })];
-    if (token.type === 'link') return docxInlineRuns(token.tokens, style);
-    if (token.type === 'image') return [new TextRun({ text: token.text, ...style })];
-    if (token.type === 'checkbox') return [new TextRun({ text: token.checked ? '☑ ' : '☐ ', ...style })];
-    if ('tokens' in token && Array.isArray(token.tokens)) return docxInlineRuns(token.tokens, style);
-    if ('text' in token && typeof token.text === 'string') return [new TextRun({ text: token.text, ...style })];
-    return [];
-  });
-}
-
-function docxBlocks(tokens: Token[], quoteDepth = 0): Array<Paragraph | Table> {
-  const blocks: Array<Paragraph | Table> = [];
-  for (const token of tokens) {
-    if (token.type === 'heading') {
-      const headings = [HeadingLevel.HEADING_1, HeadingLevel.HEADING_2, HeadingLevel.HEADING_3, HeadingLevel.HEADING_4, HeadingLevel.HEADING_5, HeadingLevel.HEADING_6];
-      blocks.push(new Paragraph({ children: docxInlineRuns(token.tokens), heading: headings[Math.max(0, Math.min(5, token.depth - 1))], spacing: { before: 200, after: 100 }, keepNext: true }));
-    } else if (token.type === 'paragraph') {
-      blocks.push(new Paragraph({ children: docxInlineRuns(token.tokens), spacing: { after: 120 }, ...(quoteDepth ? { indent: { left: quoteDepth } } : {}) }));
-    } else if (token.type === 'blockquote') {
-      blocks.push(...docxBlocks(token.tokens ?? [], quoteDepth + 360));
-    } else if (token.type === 'code') {
-      for (const line of token.text.split(/\r?\n/)) blocks.push(new Paragraph({ children: [new TextRun({ text: line || ' ', font: 'Consolas', size: 18 })], indent: { left: 240 }, spacing: { after: 0 } }));
-    } else if (token.type === 'list') {
-      token.items.forEach((item: Tokens.ListItem, index: number) => {
-        const itemTokens = item.tokens.flatMap((child: Token) => child.type === 'paragraph' ? child.tokens ?? [] : child.type === 'text' ? [child] : []);
-        const prefix = token.ordered ? `${Number(token.start || 1) + index}. ` : '• ';
-        blocks.push(new Paragraph({ children: [new TextRun({ text: prefix }), ...docxInlineRuns(itemTokens)], indent: { left: 360, hanging: 120 }, spacing: { after: 50 } }));
-      });
-    } else if (token.type === 'table') {
-      const rows = [token.header, ...token.rows].map((cells) => new TableRow({
-        children: cells.map((cell: Tokens.TableCell) => new TableCell({
-          children: [new Paragraph({ children: docxInlineRuns(cell.tokens, cell.header ? { bold: true } : {}) })],
-          margins: { top: 80, bottom: 80, left: 100, right: 100 },
-          ...(cell.header ? { shading: { fill: 'EDF2FF' } } : {}),
-        })),
-      }));
-      blocks.push(new Table({ rows, style: 'TableGrid' }));
-    } else if (token.type === 'hr') {
-      blocks.push(new Paragraph({ text: '────────────────────────────────────────', spacing: { before: 120, after: 120 } }));
-    } else if (token.type === 'html') {
-      const plainText = token.text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
-      if (plainText) blocks.push(new Paragraph({ text: plainText, spacing: { after: 120 } }));
-    }
-  }
-  return blocks;
+  return convertMarkdown(project, 'pdf');
 }
 
 async function createDocx(project: Project): Promise<Buffer> {
-  const content = docxBlocks(marked.lexer(project.statement));
-  if (!content.length) content.push(new Paragraph(''));
-  const title = new Paragraph({ children: [new TextRun({ text: project.name, bold: true, size: 36, font: 'Arial' })], heading: HeadingLevel.HEADING_1, spacing: { after: 220 } });
-  const document = new Document({ sections: [{ children: [title, ...content] }] });
-  return Packer.toBuffer(document);
+  return convertMarkdown(project, 'docx');
 }
 
+function documentToolsRoot(): string {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'tools', 'document-export')
+    : path.join(app.getAppPath(), '.tools', 'document-export');
+}
+
+async function convertMarkdown(project: Project, format: 'pdf' | 'docx'): Promise<Buffer> {
+  const root = documentToolsRoot();
+  const pandoc = path.join(root, process.platform === 'win32' ? 'pandoc.exe' : 'pandoc');
+  const typst = path.join(root, process.platform === 'win32' ? 'typst.exe' : 'typst');
+  const fontDirectory = path.join(root, 'fonts');
+  const referenceDoc = path.join(root, 'reference.docx');
+  const filter = path.join(root, 'pandoc-normalize.lua');
+  if (!existsSync(pandoc) || !existsSync(referenceDoc) || !existsSync(filter) || (format === 'pdf' && (!existsSync(typst) || !existsSync(path.join(fontDirectory, 'Roboto.ttf'))))) {
+    throw new Error('Thiếu bộ chuyển đổi tài liệu đi kèm. Hãy chạy: node .tools/npm/bin/npm-cli.js run prepare:document-tools');
+  }
+
+  const workingDirectory = await fs.mkdtemp(path.join(app.getPath('temp'), 'cp-test-studio-export-'));
+  const sourceFile = path.join(workingDirectory, 'statement.md');
+  const outputFile = path.join(workingDirectory, `statement.${format}`);
+  const documentTitle = project.name.replace(/[\r\n]/g, ' ');
+  const args = [
+    '--from=markdown',
+    `--lua-filter=${filter}`,
+    '--variable=papersize:a4',
+    `--output=${outputFile}`,
+    sourceFile,
+  ];
+  if (format === 'docx') args.push(`--metadata=title:${documentTitle}`, `--reference-doc=${referenceDoc}`);
+  if (format === 'pdf') args.push(`--pdf-engine=${typst}`, `--pdf-engine-opt=--font-path=${fontDirectory}`, '--variable=mainfont:Roboto');
+
+  try {
+    const markdown = '# ' + documentTitle + '\n\n' + project.statement;
+    await fs.writeFile(sourceFile, markdown, 'utf8');
+    const result = await runChild(pandoc, args, { cwd: workingDirectory, timeoutMs: 120_000, outputLimit: 1_000_000 });
+    if (result.exitCode !== 0 || result.timedOut) {
+      const detail = (result.stderr || result.stdout).trim();
+      throw new Error(result.timedOut ? 'Xuất tài liệu quá thời gian 120 giây.' : `Pandoc không thể xuất ${format.toUpperCase()}.${detail ? `\n${detail}` : ''}`);
+    }
+    return await fs.readFile(outputFile);
+  } finally {
+    await fs.rm(workingDirectory, { recursive: true, force: true });
+  }
+}
 async function createThemisArchive(filePath: string, tests: TestCase[]) {
   await new Promise<void>((resolve, reject) => {
     const output = createWriteStream(filePath);
@@ -538,8 +478,4 @@ async function createThemisArchive(filePath: string, tests: TestCase[]) {
     });
     void archive.finalize();
   });
-}
-
-function escapeHtml(value: string) {
-  return value.replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char] ?? char);
 }
