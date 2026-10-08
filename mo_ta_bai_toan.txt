@@ -1,0 +1,358 @@
+# CP Test Studio — Đặc tả triển khai MVP
+
+**Phiên bản:** 1.0  
+**Nền tảng:** Windows Desktop  
+**Stack:** Electron + React + TypeScript + C++17/20  
+**AI:** OpenAI API (ChatGPT) và Google Gemini API  
+**Mục đích:** Biên soạn đề lập trình thi đấu, tự động tạo generator, lời giải, testcase và xuất bộ test tương thích Themis.
+
+## 1. Nguyên tắc triển khai
+
+- Ưu tiên thư viện và công cụ mã nguồn mở, tránh tự xây lại tính năng đã có.
+- Không sử dụng backend cloud hoặc database server.
+- AI chỉ dùng để phân tích đề, trích xuất nội dung từ ảnh, sinh generator, validator và lời giải C++.
+- Biên dịch, sinh testcase, chạy lời giải, tạo output, xuất DOCX/PDF/ZIP đều thực hiện offline.
+- Có thể sử dụng ứng dụng khi chưa cấu hình API.
+- Không tự động gọi AI, trừ khi người dùng chủ động yêu cầu.
+- Tối ưu số request và token, cache kết quả AI theo nội dung đầu vào.
+- Không cần hệ thống tài khoản, đồng bộ cloud hoặc cập nhật tự động trong MVP.
+
+## 2. Công nghệ và thư viện
+
+| Thành phần | Công nghệ |
+|---|---|
+| Desktop | Electron + electron-vite |
+| UI | React + TypeScript |
+| Giao diện | Tailwind CSS + shadcn/ui |
+| State | Zustand |
+| Code Editor | Monaco Editor |
+| Markdown | react-markdown, remark-gfm |
+| LaTeX | remark-math, rehype-katex |
+| OpenAI | openai (official SDK) |
+| Gemini | @google/genai |
+| C++ | GCC / MinGW-w64, C++17 |
+| Generator / Validator | testlib.h |
+| ZIP | archiver |
+| DOCX | Pandoc + reference.docx |
+| PDF | Electron printToPDF |
+| Lưu dữ liệu | JSON + filesystem |
+| Build Windows | electron-builder |
+
+Không yêu cầu cài đặt lại GCC nếu hệ thống đã có `g++.exe`. Hỗ trợ chọn đường dẫn compiler thủ công.
+
+## 3. Flow tổng thể
+
+### 3.1. Lần đầu mở ứng dụng
+
+1. Hiển thị màn hình Welcome.
+2. Hiển thị cấu hình OpenAI API và Gemini API:
+   - Nhập API key riêng cho từng provider.
+   - Chọn provider và model mặc định.
+   - Có nút kiểm tra kết nối (chỉ khi người dùng nhấn).
+   - Có nút **Skip for now**.
+3. Lưu cấu hình sau khi người dùng xác nhận.
+4. Chuyển tới Dashboard.
+
+Không được bắt buộc có API key mới sử dụng được ứng dụng.
+
+### 3.2. Các lần mở sau
+
+- Nếu đã hoàn thành onboarding, vào thẳng Dashboard.
+- Nếu người dùng đã Skip, không hiện lại onboarding.
+- API key có thể thêm, sửa hoặc xóa trong Settings.
+- Khi chức năng cần AI nhưng chưa có API key hợp lệ, hiển thị modal cấu hình API.
+- Sau khi cấu hình thành công, tiếp tục tác vụ đang thực hiện; không làm mất nội dung đang chỉnh sửa.
+- Người dùng có thể Cancel modal để trở lại màn hình trước.
+
+### 3.3. Luồng tạo đề và sinh testcase
+
+```text
+Dashboard
+    |
+    v
+New Project / Open Project
+    |
+    v
+Nhập đề bài
+    |-- Text / Markdown
+    |-- Ảnh đề bài
+    |     \-- AI Vision nếu cần
+    |
+    v
+Editor Markdown + LaTeX
+    |
+    v
+AI phân tích đề (tùy chọn)
+    |-- Constraints
+    |-- Subtasks
+    |-- Kế hoạch sinh testcase
+    |
+    v
+Generator Editor
+    |-- AI sinh generator C++
+    |-- Hoặc người dùng tự viết
+    |-- Compile generator
+    |
+    v
+Solution Editor
+    |-- AI sinh lời giải C++
+    |-- Hoặc người dùng tự nhập
+    |-- Compile solution
+    |
+    v
+Sinh testcase
+    |-- Random
+    |-- Boundary
+    |-- Constructive
+    |-- Stress
+    |
+    v
+Kiểm tra input bằng validator (nếu có)
+    |
+    v
+Chạy solution trên toàn bộ testcase
+    |
+    |-- Lỗi compile/runtime/timeout
+    |     \-- Hiển thị lỗi, cho sửa rồi chạy lại
+    |
+    |-- Thành công
+    |     \-- Ghi output từ stdout
+    |
+    v
+Kiểm chứng (nếu có brute force/
+lời giải độc lập hoặc expected output)
+    |
+    v
+Xem danh sách test + trạng thái
+    |
+    v
+Export
+    |-- Themis ZIP
+    |-- Markdown
+    |-- DOCX
+    \-- PDF
+```
+
+## 4. Module chức năng
+
+### M01 — Dashboard và quản lý dự án
+
+- Tạo, mở, lưu, đổi tên và xóa dự án.
+- Hiển thị các dự án gần đây.
+- Mỗi dự án lưu đề bài, generator, validator, solution, cấu hình sinh test và lịch sử test.
+- Lưu dữ liệu dưới dạng thư mục và JSON.
+- Có chức năng chọn thư mục dự án trên máy.
+
+### M02 — AI Settings và Modal
+
+- Hỗ trợ OpenAI và Gemini bằng SDK chính thức.
+- Có thể khai báo cả hai provider và chuyển đổi khi cần.
+- Danh sách model cấu hình được, không hardcode duy nhất một model.
+- Lưu API key an toàn bằng cơ chế bảo vệ thông tin của hệ điều hành, không lưu plaintext trong project JSON.
+- Có chức năng Test Connection, Change Key và Remove Key.
+- Tất cả lệnh gọi API thực hiện trong Electron Main Process.
+- Khi thiếu API key, mở modal với nút Save & Continue và Cancel.
+- Không gửi dữ liệu lên API trước khi người dùng xác nhận thực hiện tác vụ AI.
+- Hiển thị usage/token khi API cung cấp, cùng ước tính chi phí nếu có thông tin giá.
+
+### M03 — Nhập và biên soạn đề
+
+- Nhập text hoặc Markdown.
+- Nhập ảnh PNG/JPG.
+- AI Vision đọc ảnh, chuyển sang Markdown/LaTeX có thể chỉnh sửa.
+- Nếu chưa cấu hình API, mở modal M02 khi nhấn trích xuất bằng AI.
+- Preview Markdown và công thức toán.
+- Cho phép sửa đề thủ công mà không gọi AI.
+- Lưu cả ảnh gốc và bản Markdown.
+
+### M04 — AI phân tích đề
+
+Nhận Markdown của đề bài và tạo:
+
+- Input/output specification.
+- Ràng buộc.
+- Subtasks.
+- Danh sách các nhóm testcase.
+- Những trường hợp biên quan trọng.
+
+Ưu tiên trả về JSON có schema và kiểm tra dữ liệu trước khi sử dụng.
+
+### M05 — Generator và Validator
+
+- Monaco Editor cho C++.
+- AI tạo generator C++ sử dụng `testlib.h`.
+- Cho phép nhập generator thủ công.
+- Generator có nhiều mode và seed để tái lập kết quả.
+- Hỗ trợ random, boundary, constructive, stress.
+- Cho phép AI tạo hoặc người dùng cung cấp validator.
+- Biên dịch bằng g++.
+- Hiển thị compiler diagnostics.
+- Sinh theo số lượng test hoặc các nhóm/subtask.
+- Không gọi API cho từng testcase.
+
+### M06 — Solution
+
+- Cho phép AI sinh lời giải C++17.
+- Người dùng có thể nhập hoặc chỉnh sửa lời giải chuẩn.
+- Biên dịch lời giải bằng g++.
+- Chạy thử bằng input tùy chọn.
+- Hiển thị stdout, stderr, exit code và thời gian thực thi.
+- Không mặc định coi lời giải AI là đúng tuyệt đối.
+
+### M07 — Test Runner và kiểm chứng
+
+- Sinh và lưu testcase đầu vào.
+- Chạy solution trên mọi testcase đã sinh.
+- Ghi stdout thành output tương ứng khi chạy thành công.
+- Hỗ trợ chạy lại tất cả hoặc một nhóm test sau khi sửa solution.
+- Không ghi đè bộ output cũ nếu quá trình chạy lại thất bại.
+- Hiển thị trạng thái từng test: Pending, Running, Passed, Failed, Timeout.
+- Giới hạn runtime, RAM và dung lượng output.
+- Cho phép sử dụng brute force hoặc lời giải độc lập để đối chiếu.
+- Nếu phát hiện kết quả không khớp, đánh dấu testcase cần xem xét.
+- Chỉ đưa các testcase hợp lệ, có output được xác nhận vào bộ xuất mặc định.
+
+### M08 — Export
+
+**Themis ZIP**
+
+Cấu trúc mặc định:
+
+```text
+BAI/
+├── TEST01/
+│   ├── BAI.INP
+│   └── BAI.OUT
+├── TEST02/
+│   ├── BAI.INP
+│   └── BAI.OUT
+└── TEST03/
+    ├── BAI.INP
+    └── BAI.OUT
+```
+
+- Có thể cấu hình tên bài, tên file, extension và cách đánh số thư mục.
+- Kiểm tra test thiếu input/output trước khi export.
+- Cho phép xem trước cấu trúc thư mục.
+- Đóng gói ZIP bằng `archiver`.
+
+**Xuất đề bài**
+
+- Xuất Markdown nguyên bản.
+- Xuất DOCX bằng Pandoc và template.
+- Xuất PDF bằng Electron `printToPDF`.
+- Hỗ trợ tiếng Việt, Unicode, công thức toán và hình ảnh.
+- Nếu thiếu Pandoc, hiển thị hướng dẫn thiết lập đường dẫn, không làm hỏng ứng dụng.
+
+## 5. Cấu trúc dự án
+
+```text
+cp-test-studio/
+├── src/
+│   ├── main/
+│   │   ├── ai/
+│   │   ├── compiler/
+│   │   ├── runner/
+│   │   ├── generator/
+│   │   ├── export/
+│   │   ├── projects/
+│   │   ├── settings/
+│   │   └── ipc/
+│   ├── preload/
+│   ├── renderer/
+│   │   ├── components/
+│   │   ├── pages/
+│   │   ├── features/
+│   │   └── stores/
+│   └── shared/
+├── resources/
+│   ├── testlib/
+│   └── templates/
+├── docs/
+│   ├── SETUP.md
+│   ├── USER_GUIDE.md
+│   └── MANUAL_TEST.md
+└── package.json
+```
+
+## 6. Quy định bảo mật và thực thi
+
+- Electron bật `contextIsolation`, không bật Node integration trong renderer.
+- Chỉ cung cấp những IPC API cần thiết qua preload.
+- Không cho renderer thực thi lệnh shell tùy ý.
+- Mọi tham số compile/run được truyền bằng danh sách arguments, không ghép chuỗi shell từ dữ liệu người dùng.
+- Chạy C++ trong tiến trình con riêng, thư mục tạm biệt lập.
+- Thiết lập timeout, giới hạn RAM, output và số tiến trình.
+- Không thực thi file generator/solution chưa được người dùng chủ động yêu cầu.
+- Mã do AI sinh là mã không tin cậy; giới hạn tiến trình cơ bản không được xem là sandbox bảo mật hoàn chỉnh.
+- Không log API key hoặc gửi API key vào renderer.
+
+## 7. Tối ưu token và API cost
+
+1. Chỉ gọi AI khi người dùng nhấn nút cụ thể.
+2. Không dùng agent loop tự động.
+3. Ưu tiên một request sinh kế hoạch test + generator + validator khi phù hợp.
+4. Cache response theo hash của nội dung, model, provider và prompt version.
+5. Không gửi lại toàn bộ lịch sử hội thoại nếu không cần.
+6. Không gửi testcase đầu vào/output hàng loạt đến AI.
+7. Compile và chạy local, không dùng AI để tính output.
+8. Nếu compile lỗi, hiển thị lỗi để người dùng sửa; nút AI Fix là tùy chọn và cần người dùng xác nhận.
+9. Cho phép người dùng cấu hình giới hạn token đầu ra.
+10. Không mặc định yêu cầu cả OpenAI và Gemini xử lý cùng một tác vụ.
+
+## 8. Yêu cầu về UI/UX
+
+Giao diện gồm sidebar:
+
+- Dashboard
+- Projects
+- Problem Editor
+- Test Generator
+- Solution
+- Test Runner
+- Export
+- Settings
+
+Giao diện hiện đại, đơn giản, hỗ trợ dark/light mode, loading state, progress bar và thông báo lỗi rõ ràng.
+
+Phải có trạng thái riêng cho các trường hợp: chưa cấu hình AI, thiếu compiler, thiếu Pandoc, generator compile lỗi, solution timeout và testcase không hợp lệ.
+
+## 9. Phạm vi công việc của Coding Agent
+
+Agent phải:
+
+1. Khởi tạo dự án và triển khai mã nguồn theo kiến trúc trên.
+2. Sử dụng các thư viện có sẵn, tránh tự viết framework hoặc công cụ xử lý không cần thiết.
+3. Cấu hình môi trường phát triển và build Windows.
+4. Viết `README.md` mô tả kiến trúc, chức năng và các lệnh cần thiết.
+5. Viết `docs/SETUP.md` hướng dẫn cài Node.js, compiler C++, Pandoc và cấu hình đường dẫn.
+6. Viết `docs/USER_GUIDE.md` hướng dẫn thao tác từ tạo đề tới xuất Themis.
+7. Viết `docs/MANUAL_TEST.md` với checklist kiểm thử thủ công, kết quả mong đợi và cách xác định lỗi.
+8. Thực hiện kiểm tra TypeScript/build để bảo đảm dự án biên dịch thành công.
+9. Báo cáo chính xác trạng thái build, lỗi tồn tại và các chức năng chưa được kiểm thử.
+
+**Không yêu cầu agent chạy kiểm thử chức năng, gọi API thật, hoặc tự kiểm thử các testcase CP.** Việc này do người dùng thực hiện theo tài liệu.
+
+## 10. Tiêu chí bàn giao
+
+- Mã nguồn đầy đủ, không chỉ là UI mockup.
+- Có thể chạy dự án ở development mode.
+- Build thành công ứng dụng Windows (hoặc chỉ rõ nếu môi trường agent không thể build installer Windows).
+- Có đầy đủ ba tài liệu hướng dẫn trong thư mục `docs`.
+- Không yêu cầu OpenAI/Gemini API key khi khởi động.
+- Không cần backend cloud.
+- Các chức năng chưa triển khai phải được ghi rõ, không thay bằng dữ liệu giả mà không thông báo.
+- Agent chỉ xác nhận build thành công, không tuyên bố ứng dụng hoạt động hoàn hảo khi chưa được người dùng kiểm thử.
+
+## 11. Lệnh hoàn tất dành cho agent
+
+Sau khi triển khai:
+
+1. Chạy typecheck.
+2. Chạy production build.
+3. Kiểm tra quá trình build trả exit code 0.
+4. Không gọi API thật và không chạy functional/end-to-end tests.
+5. Ghi kết quả vào `BUILD_REPORT.md`.
+6. Kết thúc bằng danh sách chức năng đã triển khai, các hạn chế, tài liệu hướng dẫn và trạng thái build.
+
+**Ưu tiên:** Một MVP chạy được, dễ bảo trì và có thể phát triển tiếp, thay vì hệ thống phức tạp với nhiều lớp trừu tượng không cần thiết.
