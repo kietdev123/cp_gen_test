@@ -1,9 +1,9 @@
-import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, safeStorage, shell } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { createWriteStream, existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import archiver from 'archiver';
 import OpenAI from 'openai';
 import { GoogleGenAI } from '@google/genai';
@@ -43,13 +43,39 @@ const keysFile = () => path.join(app.getPath('userData'), 'secure-keys.json');
 const projectsRoot = () => path.join(app.getPath('userData'), 'projects');
 const buildRoot = () => path.join(app.getPath('userData'), 'build');
 let activeCompilerPath = '';
+let activeCompilerIsBundled = false;
+let cachedBundledRoot: string | null | undefined;
+
+function shortWindowsPath(value: string): string {
+  if (process.platform !== 'win32') return value;
+  try {
+    const result = spawnSync('cmd.exe', ['/d', '/c', 'for %I in ("%CP_STUDIO_TOOLCHAIN%") do @echo %~sI'], {
+      env: { ...process.env, CP_STUDIO_TOOLCHAIN: value }, encoding: 'utf8', windowsHide: true, windowsVerbatimArguments: true,
+    });
+    const shortPath = result.stdout?.trim().split(/\r?\n/).pop();
+    if (result.status === 0 && shortPath && !shortPath.includes(' ')) return shortPath;
+  } catch { /* Keep the original path if Windows has no short-name alias. */ }
+  return value;
+}
+
+function bundledCompilerRoot(): string | undefined {
+  if (cachedBundledRoot !== undefined) return cachedBundledRoot ?? undefined;
+  const root = app.isPackaged
+    ? path.join(process.resourcesPath, 'toolchain', 'mingw64')
+    : path.join(app.getAppPath(), '.tools', 'mingw64');
+  if (!existsSync(path.join(root, 'bin', 'g++.exe'))) {
+    cachedBundledRoot = null;
+    return undefined;
+  }
+  cachedBundledRoot = shortWindowsPath(root);
+  return cachedBundledRoot;
+}
 
 function bundledCompilerBin(): string | undefined {
   if (process.platform !== 'win32') return undefined;
-  const base = app.isPackaged
-    ? path.join(process.resourcesPath, 'toolchain', 'mingw64')
-    : path.join(app.getAppPath(), '.tools', 'mingw64');
-  const bin = path.join(base, 'bin');
+  const root = bundledCompilerRoot();
+  if (!root) return undefined;
+  const bin = path.join(root, 'bin');
   return existsSync(path.join(bin, 'g++.exe')) ? bin : undefined;
 }
 
@@ -58,6 +84,8 @@ function childEnvironment(): NodeJS.ProcessEnv {
   const pathKey = Object.keys(env).find((key) => key.toLowerCase() === 'path') ?? 'PATH';
   const extraDirs = [activeCompilerPath ? path.dirname(activeCompilerPath) : '', bundledCompilerBin() ?? ''];
   env[pathKey] = [...new Set([...extraDirs, env[pathKey] ?? ''].filter(Boolean))].join(path.delimiter);
+  const bundledBin = activeCompilerIsBundled ? bundledCompilerBin() : undefined;
+  if (bundledBin) env.GCC_EXEC_PREFIX = `${path.join(path.dirname(bundledBin), 'lib', 'gcc')}${path.sep}`;
   return env;
 }
 const safeId = (value: string) => /^[a-f0-9-]{8,64}$/i.test(value);
@@ -122,7 +150,11 @@ async function compiler(): Promise<string> {
     if (!candidate) continue;
     if (existsSync(candidate)) {
       const result = await runChild(candidate, ['--version'], { timeoutMs: 4000, outputLimit: 16_000 }).catch(() => null);
-      if (result?.exitCode === 0) { activeCompilerPath = candidate; return candidate; }
+      if (result?.exitCode === 0) {
+        activeCompilerPath = candidate;
+        activeCompilerIsBundled = bundledBin !== undefined && path.resolve(candidate).toLowerCase() === path.resolve(path.join(bundledBin, 'g++.exe')).toLowerCase();
+        return candidate;
+      }
     }
   }
   throw new Error('Không tìm thấy g++. Hãy cài lại ứng dụng hoặc chọn g++.exe trong Cài đặt.');
@@ -135,7 +167,7 @@ async function compile(projectId: string, kind: ProgramKind, source: string): Pr
   const sourceFile = path.join(dir, `${kind}.cpp`);
   const binary = path.join(dir, `${kind}${process.platform === 'win32' ? '.exe' : ''}`);
   await fs.writeFile(sourceFile, source, 'utf8');
-  const result = await runChild(selectedCompiler, ['-std=c++17', '-O2', '-pipe', sourceFile, '-o', binary], { timeoutMs: 60_000, outputLimit: 1_000_000, cwd: dir });
+  const result = await runChild(selectedCompiler, ['-std=c++17', '-O2', '-pipe', path.basename(sourceFile), '-o', path.basename(binary)], { timeoutMs: 60_000, outputLimit: 1_000_000, cwd: dir });
   return { ok: result.exitCode === 0 && !result.timedOut, diagnostics: result.timedOut ? 'Biên dịch quá thời gian 60 giây.' : `${result.stderr}${result.stdout}`.trim(), compiler: selectedCompiler };
 }
 
@@ -189,6 +221,7 @@ function createWindow() {
 
 app.whenReady().then(async () => {
   app.setAppUserModelId('vn.cpteststudio.desktop');
+  Menu.setApplicationMenu(null);
   await Promise.all([fs.mkdir(projectsRoot(), { recursive: true }), fs.mkdir(buildRoot(), { recursive: true })]);
   createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
@@ -197,7 +230,10 @@ app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(
 
 ipcMain.handle('app:status', async () => {
   const settings = await readSettings();
-  try { return { compilerAvailable: true, compiler: await compiler(), onboardingComplete: settings.onboardingComplete }; }
+  try {
+    const selectedCompiler = await compiler();
+    return { compilerAvailable: true, compiler: activeCompilerIsBundled ? 'MinGW-w64 đi kèm ứng dụng' : selectedCompiler, onboardingComplete: settings.onboardingComplete };
+  }
   catch { return { compilerAvailable: false, compiler: '', onboardingComplete: settings.onboardingComplete }; }
 });
 ipcMain.handle('projects:list', async () => {
