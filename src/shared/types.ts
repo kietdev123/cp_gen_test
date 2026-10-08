@@ -93,4 +93,5 @@ export interface AppApi {
   exportMarkdown(project: Project): Promise<string | null>;
   exportPdf(project: Project): Promise<string | null>;
   exportDocx(project: Project): Promise<string | null>;
+  exportAll(project: Project): Promise<{ directory: string; files: string[] } | null>;
 }

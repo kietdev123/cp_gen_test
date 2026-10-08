@@ -1,0 +1,1 @@
+bỏ modal "Kết quả từ AI"

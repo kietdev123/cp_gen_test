@@ -5,6 +5,10 @@ import { createWriteStream, existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import archiver from 'archiver';
+import { Document, HeadingLevel, Paragraph, Packer, Table, TableCell, TableRow, TextRun } from 'docx';
+import katex from 'katex';
+import { marked, Marked, type Token, type Tokens, type TokenizerAndRendererExtension } from 'marked';
+import sanitizeHtml from 'sanitize-html';
 import OpenAI from 'openai';
 import { GoogleGenAI } from '@google/genai';
 import type { AiRequest, CompileResult, Project, ProgramKind, Provider, RunResult, Settings, TestCase } from '../shared/types';
@@ -32,7 +36,7 @@ int main() {
     return 0;
 }`;
 const DEFAULT_PROJECT: Omit<Project, 'id' | 'name' | 'createdAt' | 'updatedAt'> = {
-  statement: '# Đề bài mới\n\nNhập đề bài Markdown tại đây. Có thể viết công thức LaTeX như `$O(n \\log n)$`.\n',
+  statement: '',
   generator: DEFAULT_GENERATOR, solution: DEFAULT_SOLUTION, validator: '', images: [], tests: [],
   generatorMode: 'random', seed: 2026, timeLimitMs: 2000,
 };
@@ -167,7 +171,8 @@ async function compile(projectId: string, kind: ProgramKind, source: string): Pr
   const sourceFile = path.join(dir, `${kind}.cpp`);
   const binary = path.join(dir, `${kind}${process.platform === 'win32' ? '.exe' : ''}`);
   await fs.writeFile(sourceFile, source, 'utf8');
-  const result = await runChild(selectedCompiler, ['-std=c++17', '-O2', '-pipe', path.basename(sourceFile), '-o', path.basename(binary)], { timeoutMs: 60_000, outputLimit: 1_000_000, cwd: dir });
+  const runtimeLinking = process.platform === 'win32' ? ['-static'] : [];
+  const result = await runChild(selectedCompiler, ['-std=c++17', '-O2', '-pipe', ...runtimeLinking, path.basename(sourceFile), '-o', path.basename(binary)], { timeoutMs: 60_000, outputLimit: 1_000_000, cwd: dir });
   return { ok: result.exitCode === 0 && !result.timedOut, diagnostics: result.timedOut ? 'Biên dịch quá thời gian 60 giây.' : `${result.stderr}${result.stdout}`.trim(), compiler: selectedCompiler };
 }
 
@@ -333,7 +338,7 @@ ipcMain.handle('code:compile', async (_event, projectId: string, kind: ProgramKi
 ipcMain.handle('code:run', async (_event, projectId: string, kind: ProgramKind, input: string, args: string[] = [], timeoutMs = 2000) => {
   const file = binaryPath(projectId, kind);
   if (!existsSync(file)) throw new Error('Chưa biên dịch chương trình.');
-  return runChild(file, args.map(String).slice(0, 32), { input, timeoutMs: Math.max(100, Math.min(timeoutMs, 30_000)), outputLimit: 2 * 1024 * 1024 });
+  return runChild(file, args.map(String).slice(0, 32), { input, timeoutMs: Math.max(100, Math.min(timeoutMs, 30_000)), outputLimit: 2 * 1024 * 1024, cwd: path.dirname(file) });
 });
 ipcMain.handle('tests:generate', async (_event, projectId: string, count: number, seed: number, mode: string, source: string) => {
   const result = await compile(projectId, 'generator', source);
@@ -385,25 +390,155 @@ ipcMain.handle('export:markdown', async (_event, project: Project) => {
 ipcMain.handle('export:pdf', async (_event, project: Project) => {
   const choice = await dialog.showSaveDialog(mainWindow!, { title: 'Xuất đề PDF', defaultPath: `${project.name.replace(/[\\/:*?"<>|]/g, '_')}.pdf`, filters: [{ name: 'PDF', extensions: ['pdf'] }] });
   if (choice.canceled || !choice.filePath) return null;
-  const printWindow = new BrowserWindow({ show: false, webPreferences: { contextIsolation: true, sandbox: true } });
-  const html = `<!doctype html><html lang="vi"><meta charset="utf-8"><style>body{font:14px Arial,sans-serif;line-height:1.65;margin:24mm;color:#172033}pre{white-space:pre-wrap;font:inherit}h1{font-size:24px}</style><body><h1>${escapeHtml(project.name)}</h1><pre>${escapeHtml(project.statement)}</pre></body></html>`;
-  await printWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
-  const pdf = await printWindow.webContents.printToPDF({ printBackground: true, pageSize: 'A4' });
-  await fs.writeFile(choice.filePath, pdf); printWindow.close(); return choice.filePath;
+  await fs.writeFile(choice.filePath, await createPdf(project)); return choice.filePath;
 });
 ipcMain.handle('export:docx', async (_event, project: Project) => {
-  const settings = await readSettings();
-  const pandoc = settings.pandocPath || 'pandoc';
   const choice = await dialog.showSaveDialog(mainWindow!, { title: 'Xuất đề DOCX', defaultPath: `${project.name.replace(/[\\/:*?"<>|]/g, '_')}.docx`, filters: [{ name: 'Word', extensions: ['docx'] }] });
   if (choice.canceled || !choice.filePath) return null;
-  const md = path.join(app.getPath('temp'), `${randomUUID()}.md`); await fs.writeFile(md, `# ${project.name}\n\n${project.statement}`, 'utf8');
-  const result = await runChild(pandoc, [md, '-o', choice.filePath], { timeoutMs: 30_000, outputLimit: 200_000 });
-  await fs.rm(md, { force: true });
-  if (result.exitCode !== 0) throw new Error(`Không chạy được Pandoc. Hãy cài Pandoc hoặc chọn pandoc.exe trong Cài đặt.\n${result.stderr}`);
+  await fs.writeFile(choice.filePath, await createDocx(project));
   return choice.filePath;
+});
+ipcMain.handle('export:all', async (_event, project: Project) => {
+  const choice = await dialog.showOpenDialog(mainWindow!, { title: 'Chọn thư mục lưu bộ đề', properties: ['openDirectory', 'createDirectory'] });
+  if (choice.canceled || !choice.filePaths[0]) return null;
+  const directory = choice.filePaths[0];
+  const base = safeFileName(project.name);
+  const ready = project.tests.filter((test) => test.status === 'passed');
+  if (!project.tests.length || ready.length !== project.tests.length) throw new Error('Hãy chạy thành công toàn bộ testcase trước khi xuất bộ đề.');
+  const files = [`${base}.md`, `${base}.pdf`, `${base}.docx`, `${base}.zip`];
+  await fs.writeFile(path.join(directory, files[0]), `# ${project.name}\n\n${project.statement}`, 'utf8');
+  await fs.writeFile(path.join(directory, files[1]), await createPdf(project));
+  await fs.writeFile(path.join(directory, files[2]), await createDocx(project));
+  await createThemisArchive(path.join(directory, files[3]), ready);
+  return { directory, files };
 });
 
 ipcMain.handle('projects:open-folder', async (_event, id: string) => shell.openPath(projectPath(id)));
+
+function safeFileName(value: string) {
+  return value.replace(/[\\/:*?"<>|]/g, '_').trim().replace(/[. ]+$/g, '') || 'De-bai';
+}
+
+async function createPdf(project: Project): Promise<Buffer> {
+  const mathExtension = (displayMode: boolean): TokenizerAndRendererExtension => {
+    const name = displayMode ? 'mathBlock' : 'mathInline';
+    return {
+      name,
+      level: displayMode ? 'block' : 'inline',
+      start: (source: string) => source.indexOf('$') < 0 ? undefined : source.indexOf('$'),
+      tokenizer: (source: string) => {
+        const match = displayMode ? /^\$\$([\s\S]+?)\$\$(?:\n|$)/.exec(source) : /^\$([^$\n]+)\$/.exec(source);
+        return match ? { type: name, raw: match[0], text: match[1] } : undefined;
+      },
+      renderer: (token: Tokens.Generic) => katex.renderToString(String(token.text ?? ''), { displayMode, throwOnError: false, output: 'html' }),
+    };
+  };
+  const markdown = new Marked({ gfm: true, renderer: { html: ({ text }: Tokens.HTML | Tokens.Tag) => escapeHtml(text) } });
+  markdown.use({ extensions: [mathExtension(true), mathExtension(false)] });
+  const rendered = await markdown.parse(project.statement);
+  const content = sanitizeHtml(rendered, {
+    allowedTags: ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'ul', 'ol', 'li', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'strong', 'em', 'del', 'blockquote', 'pre', 'code', 'hr', 'a', 'br', 'span'],
+    allowedAttributes: { a: ['href', 'title'], code: ['class'], span: ['class', 'aria-hidden'], th: ['align'], td: ['align'] },
+    allowedSchemes: ['http', 'https', 'mailto'],
+  });
+  const katexCssPath = path.join(app.getAppPath(), 'node_modules', 'katex', 'dist', 'katex.min.css');
+  const katexCss = await fs.readFile(katexCssPath, 'utf8').catch(() => '');
+  const html = `<!doctype html><html lang="vi"><meta charset="utf-8"><style>${katexCss}</style><style>
+    @page{size:A4;margin:22mm 20mm}body{font:11pt/1.65 Arial,"Segoe UI",sans-serif;color:#172033}
+    h1,h2,h3,h4{line-height:1.3;margin:1.1em 0 .45em;page-break-after:avoid}h1{font-size:21pt}h2{font-size:16pt}h3{font-size:13pt}
+    p,ul,ol,blockquote,table,pre{margin:.55em 0;orphans:3;widows:3}li{margin:.2em 0}blockquote{border-left:3px solid #ccd5e5;padding-left:12px;color:#536078}
+    table{border-collapse:collapse;width:100%;font-size:10pt}th,td{border:1px solid #b9c3d3;padding:6px 8px;text-align:left}th{background:#edf2ff}
+    pre{white-space:pre-wrap;word-break:break-word;background:#f5f7fa;border:1px solid #e1e6ee;border-radius:4px;padding:9px;font:9pt/1.5 Consolas,monospace}
+    code{font:9pt Consolas,monospace;background:#f1f3f7;padding:1px 3px;border-radius:2px}a{color:#365bb9;text-decoration:underline}hr{border:0;border-top:1px solid #ccd3de}
+  </style><body><h1>${escapeHtml(project.name)}</h1>${content}</body></html>`;
+  const printWindow = new BrowserWindow({ show: false, webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false } });
+  try {
+    await printWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+    return await printWindow.webContents.printToPDF({ printBackground: true, pageSize: 'A4' });
+  } finally {
+    if (!printWindow.isDestroyed()) printWindow.close();
+  }
+}
+
+type DocxInlineStyle = { bold?: boolean; italics?: boolean; strike?: boolean };
+
+function docxInlineRuns(tokens: Token[] = [], style: DocxInlineStyle = {}): TextRun[] {
+  return tokens.flatMap((token): TextRun[] => {
+    if (token.type === 'strong') return docxInlineRuns(token.tokens, { ...style, bold: true });
+    if (token.type === 'em') return docxInlineRuns(token.tokens, { ...style, italics: true });
+    if (token.type === 'del') return docxInlineRuns(token.tokens, { ...style, strike: true });
+    if (token.type === 'codespan') return [new TextRun({ text: token.text, font: 'Consolas', size: 19, ...style })];
+    if (token.type === 'br') return [new TextRun({ text: '', break: 1, ...style })];
+    if (token.type === 'link') return docxInlineRuns(token.tokens, style);
+    if (token.type === 'image') return [new TextRun({ text: token.text, ...style })];
+    if (token.type === 'checkbox') return [new TextRun({ text: token.checked ? '☑ ' : '☐ ', ...style })];
+    if ('tokens' in token && Array.isArray(token.tokens)) return docxInlineRuns(token.tokens, style);
+    if ('text' in token && typeof token.text === 'string') return [new TextRun({ text: token.text, ...style })];
+    return [];
+  });
+}
+
+function docxBlocks(tokens: Token[], quoteDepth = 0): Array<Paragraph | Table> {
+  const blocks: Array<Paragraph | Table> = [];
+  for (const token of tokens) {
+    if (token.type === 'heading') {
+      const headings = [HeadingLevel.HEADING_1, HeadingLevel.HEADING_2, HeadingLevel.HEADING_3, HeadingLevel.HEADING_4, HeadingLevel.HEADING_5, HeadingLevel.HEADING_6];
+      blocks.push(new Paragraph({ children: docxInlineRuns(token.tokens), heading: headings[Math.max(0, Math.min(5, token.depth - 1))], spacing: { before: 200, after: 100 }, keepNext: true }));
+    } else if (token.type === 'paragraph') {
+      blocks.push(new Paragraph({ children: docxInlineRuns(token.tokens), spacing: { after: 120 }, ...(quoteDepth ? { indent: { left: quoteDepth } } : {}) }));
+    } else if (token.type === 'blockquote') {
+      blocks.push(...docxBlocks(token.tokens ?? [], quoteDepth + 360));
+    } else if (token.type === 'code') {
+      for (const line of token.text.split(/\r?\n/)) blocks.push(new Paragraph({ children: [new TextRun({ text: line || ' ', font: 'Consolas', size: 18 })], indent: { left: 240 }, spacing: { after: 0 } }));
+    } else if (token.type === 'list') {
+      token.items.forEach((item: Tokens.ListItem, index: number) => {
+        const itemTokens = item.tokens.flatMap((child: Token) => child.type === 'paragraph' ? child.tokens ?? [] : child.type === 'text' ? [child] : []);
+        const prefix = token.ordered ? `${Number(token.start || 1) + index}. ` : '• ';
+        blocks.push(new Paragraph({ children: [new TextRun({ text: prefix }), ...docxInlineRuns(itemTokens)], indent: { left: 360, hanging: 120 }, spacing: { after: 50 } }));
+      });
+    } else if (token.type === 'table') {
+      const rows = [token.header, ...token.rows].map((cells) => new TableRow({
+        children: cells.map((cell: Tokens.TableCell) => new TableCell({
+          children: [new Paragraph({ children: docxInlineRuns(cell.tokens, cell.header ? { bold: true } : {}) })],
+          margins: { top: 80, bottom: 80, left: 100, right: 100 },
+          ...(cell.header ? { shading: { fill: 'EDF2FF' } } : {}),
+        })),
+      }));
+      blocks.push(new Table({ rows, style: 'TableGrid' }));
+    } else if (token.type === 'hr') {
+      blocks.push(new Paragraph({ text: '────────────────────────────────────────', spacing: { before: 120, after: 120 } }));
+    } else if (token.type === 'html') {
+      const plainText = token.text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+      if (plainText) blocks.push(new Paragraph({ text: plainText, spacing: { after: 120 } }));
+    }
+  }
+  return blocks;
+}
+
+async function createDocx(project: Project): Promise<Buffer> {
+  const content = docxBlocks(marked.lexer(project.statement));
+  if (!content.length) content.push(new Paragraph(''));
+  const title = new Paragraph({ children: [new TextRun({ text: project.name, bold: true, size: 36, font: 'Arial' })], heading: HeadingLevel.HEADING_1, spacing: { after: 220 } });
+  const document = new Document({ sections: [{ children: [title, ...content] }] });
+  return Packer.toBuffer(document);
+}
+
+async function createThemisArchive(filePath: string, tests: TestCase[]) {
+  await new Promise<void>((resolve, reject) => {
+    const output = createWriteStream(filePath);
+    const archive = archiver('zip', { zlib: { level: 9 } });
+    output.once('close', resolve);
+    output.once('error', reject);
+    archive.once('error', reject);
+    archive.pipe(output);
+    tests.forEach((test, index) => {
+      const folder = `BAI/TEST${String(index + 1).padStart(2, '0')}`;
+      archive.append(test.input, { name: `${folder}/BAI.INP` });
+      archive.append(test.output, { name: `${folder}/BAI.OUT` });
+    });
+    void archive.finalize();
+  });
+}
 
 function escapeHtml(value: string) {
   return value.replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char] ?? char);

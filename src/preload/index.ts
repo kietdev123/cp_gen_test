@@ -27,6 +27,7 @@ const api: AppApi = {
   exportMarkdown: (project: Project) => ipcRenderer.invoke('export:markdown', project),
   exportPdf: (project: Project) => ipcRenderer.invoke('export:pdf', project),
   exportDocx: (project: Project) => ipcRenderer.invoke('export:docx', project),
+  exportAll: (project: Project) => ipcRenderer.invoke('export:all', project),
 };
 
 contextBridge.exposeInMainWorld('studio', api);

@@ -4,7 +4,7 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import {
-  Activity, ArrowDownToLine, ArrowRight, BadgeCheck, BookOpen, Braces, Check,
+  Activity, ArrowDownToLine, ArrowLeft, ArrowRight, BadgeCheck, BookOpen, Braces, Check,
   ChevronDown, CircleHelp, Code2, Command, Download, FileCode2, FileImage, FileText, Folder,
   FolderOpen, Gauge, Github, HardDrive, KeyRound, LayoutDashboard, ListChecks, LoaderCircle,
   Moon, MoreHorizontal, Play, Plus, Rocket, Save, Settings as SettingsIcon, Shield, Sparkles,
@@ -14,15 +14,40 @@ import type { AiRequest, Project, ProgramKind, Provider, Settings, TestCase } fr
 import { useApp, type Page } from './stores/app';
 
 const nav: { id: Page; label: string; icon: typeof LayoutDashboard; section?: string }[] = [
-  { id: 'dashboard', label: 'Tổng quan', icon: LayoutDashboard },
+  { id: 'dashboard', label: 'Tổng quan', icon: LayoutDashboard, section: 'KHÔNG GIAN' },
   { id: 'projects', label: 'Dự án', icon: FolderOpen },
-  { id: 'problem', label: 'Biên soạn đề', icon: BookOpen, section: 'SOẠN THẢO' },
-  { id: 'generator', label: 'Sinh testcase', icon: Braces },
-  { id: 'solution', label: 'Lời giải', icon: Code2 },
-  { id: 'runner', label: 'Chạy & kiểm tra', icon: ListChecks },
-  { id: 'export', label: 'Xuất bộ đề', icon: ArrowDownToLine, section: 'HOÀN TẤT' },
+  { id: 'problem', label: 'Soạn đề', icon: BookOpen, section: 'SOẠN THẢO' },
   { id: 'settings', label: 'Cài đặt', icon: SettingsIcon, section: 'ỨNG DỤNG' },
 ];
+
+const workflowSteps: { id: Extract<Page, 'problem' | 'generator' | 'solution' | 'runner' | 'export'>; label: string; description: string; icon: typeof BookOpen }[] = [
+  { id: 'problem', label: 'Biên soạn đề', description: 'Ý tưởng hoặc ảnh đề', icon: BookOpen },
+  { id: 'generator', label: 'Generator', description: 'Tạo dữ liệu đầu vào', icon: Braces },
+  { id: 'solution', label: 'Lời giải', description: 'Viết chương trình chuẩn', icon: Code2 },
+  { id: 'runner', label: 'Kiểm tra', description: 'Chạy trên các testcase', icon: ListChecks },
+  { id: 'export', label: 'Xuất bộ đề', description: 'Đóng gói và chia sẻ', icon: ArrowDownToLine },
+];
+
+const isWorkflowPage = (page: Page) => workflowSteps.some((step) => step.id === page);
+type AiWorkflowStep = 'generator' | 'solution';
+type AiWorkflowChoice = 'unasked' | 'ai' | 'manual';
+
+async function retryOnce<T>(operation: () => Promise<T>, shouldRetry: (result: T) => boolean, onRetry: () => void): Promise<T> {
+  let failed = false;
+  try {
+    const result = await operation();
+    if (!shouldRetry(result)) return result;
+    failed = true;
+  } catch {
+    failed = true;
+  }
+  if (failed) {
+    onRetry();
+    await new Promise((resolve) => window.setTimeout(resolve, 1000));
+    return operation();
+  }
+  throw new Error('Thao tác thất bại.');
+}
 
 const pageInfo: Record<Page, { title: string; subtitle: string }> = {
   dashboard: { title: 'Tổng quan', subtitle: 'Không gian làm việc soạn đề và chuẩn bị bộ test.' },
@@ -44,14 +69,23 @@ function App() {
   const [compilerName, setCompilerName] = useState('');
   const [toast, setToast] = useState<{ kind: 'success' | 'error' | 'info'; text: string } | null>(null);
   const [busy, setBusy] = useState('');
-  const [aiResult, setAiResult] = useState('');
   const [projectName, setProjectName] = useState('');
   const [projectModal, setProjectModal] = useState(false);
+  const [stepAiPrompt, setStepAiPrompt] = useState<AiWorkflowStep | null>(null);
+  const [stepAiChoices, setStepAiChoices] = useState<Record<AiWorkflowStep, AiWorkflowChoice>>({ generator: 'unasked', solution: 'unasked' });
+  const [solutionCheckKey, setSolutionCheckKey] = useState('');
+  const [exportDirectory, setExportDirectory] = useState('');
+  const [exportedProjectId, setExportedProjectId] = useState('');
   const [runInput, setRunInput] = useState('');
   const [runOutput, setRunOutput] = useState('');
   const [generatorCount, setGeneratorCount] = useState(10);
+  const [ideaPrompt, setIdeaPrompt] = useState('');
+  const [sourceMode, setSourceMode] = useState<'text' | 'image'>('text');
   const [photo, setPhoto] = useState<{ data: string; mimeType: string; name: string } | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const ideaPromptRef = useRef<HTMLTextAreaElement>(null);
+  const autoRunnerKey = useRef('');
+  const autoExportProjectKey = useRef('');
 
   const notify = useCallback((text: string, kind: 'success' | 'error' | 'info' = 'success') => {
     setToast({ text, kind }); window.setTimeout(() => setToast(null), 3800);
@@ -77,10 +111,19 @@ function App() {
 
   useEffect(() => { document.documentElement.dataset.theme = settings?.theme ?? 'light'; }, [settings?.theme]);
 
-  const saveProject = async () => {
-    if (!active) return;
-    try { const saved = await window.studio.saveProject(active); setActive(saved); setDirty(false); notify('Đã lưu dự án.'); }
-    catch (error) { notify((error as Error).message, 'error'); }
+  useEffect(() => {
+    if (!active || (page !== 'generator' && page !== 'solution') || stepAiChoices[page] !== 'unasked') return;
+    const ready = page === 'generator' ? isReadyGenerator(active) : isReadySolution(active);
+    if (!ready) setStepAiPrompt(page);
+  }, [active?.id, active?.generator, active?.solution, page, stepAiChoices]);
+
+  const persistActiveProject = async () => {
+    if (!active) return false;
+    try {
+      const saved = await window.studio.saveProject(active);
+      setActive(saved); setDirty(false);
+      return true;
+    } catch (error) { notify(`Không lưu được: ${(error as Error).message}`, 'error'); return false; }
   };
 
   const createProject = async () => {
@@ -88,12 +131,12 @@ function App() {
     if (!value) return;
     try {
       const project = await window.studio.createProject(value);
-      setActive(project); setProjects([project, ...projects]); setPage('problem'); setProjectModal(false); setProjectName('');
+      setActive(project); setProjects([project, ...projects]); setPage('problem'); setSourceMode('text'); setIdeaPrompt(''); setPhoto(null); setStepAiPrompt(null); setStepAiChoices({ generator: 'unasked', solution: 'unasked' }); setSolutionCheckKey(''); setExportDirectory(''); setExportedProjectId(''); autoExportProjectKey.current = ''; setProjectModal(false); setProjectName('');
       notify('Đã tạo dự án mới.');
     } catch (error) { notify((error as Error).message, 'error'); }
   };
 
-  const openProject = (project: Project) => { setActive(project); setPage('problem'); setAiResult(''); };
+  const openProject = (project: Project) => { setActive(project); setPage('problem'); setSourceMode(project.images.length ? 'image' : 'text'); setIdeaPrompt(''); setPhoto(null); setStepAiPrompt(null); setStepAiChoices({ generator: 'unasked', solution: 'unasked' }); setSolutionCheckKey(''); setExportDirectory(''); setExportedProjectId(''); autoExportProjectKey.current = ''; };
 
   const removeProject = async (project: Project) => {
     if (!window.confirm(`Xóa dự án “${project.name}” và các tệp liên quan?`)) return;
@@ -132,8 +175,8 @@ function App() {
     if (!settings) return '';
     const provider = request.provider ?? settings.provider;
     if (!hasKeys[provider]) { notify(`Hãy thêm API key ${provider === 'openai' ? 'OpenAI' : 'Gemini'} trong Cài đặt trước.`, 'info'); setPage('settings'); return ''; }
-    setBusy(label); setAiResult('');
-    try { const answer = await window.studio.askAi(request); setAiResult(answer); return answer; }
+    setBusy(label);
+    try { return await window.studio.askAi(request); }
     catch (error) { notify((error as Error).message, 'error'); return ''; }
     finally { setBusy(''); }
   };
@@ -142,7 +185,8 @@ function App() {
     if (!active) { notify('Hãy mở hoặc tạo dự án trước.', 'info'); return false; }
     setBusy(`compile-${kind}`);
     try {
-      const result = await window.studio.compile(active.id, kind, source);
+      const label = kind === 'generator' ? 'Generator' : kind === 'solution' ? 'Lời giải' : 'Validator';
+      const result = await retryOnce(() => window.studio.compile(active.id, kind, source), (attempt) => !attempt.ok, () => notify(`Biên dịch ${label} lỗi, sẽ thử lại sau 1 giây…`, 'info'));
       if (result.ok) notify(`${kind === 'generator' ? 'Generator' : kind === 'solution' ? 'Lời giải' : 'Validator'} biên dịch thành công với ${result.compiler}.`);
       else notify(result.diagnostics || 'Biên dịch chưa thành công.', 'error');
       setCompilerAvailable(result.ok || compilerAvailable); setCompilerName(result.compiler);
@@ -157,18 +201,8 @@ function App() {
     if (!ok) return;
     setBusy('run');
     try {
-      const result = await window.studio.run(active.id, 'solution', runInput, [], active.timeLimitMs);
+      const result = await retryOnce(() => window.studio.run(active.id, 'solution', runInput, [], active.timeLimitMs), (attempt) => attempt.timedOut || attempt.exitCode !== 0 || attempt.outputLimited, () => notify('Chạy thử lời giải gặp lỗi, sẽ thử lại sau 1 giây…', 'info'));
       setRunOutput(`${result.timedOut ? 'Quá thời gian.\n' : ''}${result.stdout}${result.stderr ? `\n[stderr]\n${result.stderr}` : ''}${result.exitCode !== 0 && !result.timedOut ? `\nMã thoát: ${result.exitCode}` : ''}`);
-    } catch (error) { notify((error as Error).message, 'error'); }
-    finally { setBusy(''); }
-  };
-
-  const generate = async () => {
-    if (!active) { notify('Hãy tạo dự án trước.', 'info'); return; }
-    setBusy('generate');
-    try {
-      const tests = await window.studio.generateTests(active.id, generatorCount, active.seed, active.generatorMode, active.generator);
-      updateActive({ tests: [...active.tests, ...tests] }); setPage('runner'); notify(`Đã sinh ${tests.length} testcase.`);
     } catch (error) { notify((error as Error).message, 'error'); }
     finally { setBusy(''); }
   };
@@ -177,7 +211,7 @@ function App() {
     if (!active || !active.tests.length) { notify('Chưa có testcase để chạy.', 'info'); return; }
     setBusy('run-tests');
     try {
-      const result = await window.studio.runTests(active.id, active.solution, active.tests, active.timeLimitMs);
+      const result = await retryOnce(() => window.studio.runTests(active.id, active.solution, active.tests, active.timeLimitMs), (attempt) => attempt.some((test) => test.status !== 'passed'), () => notify('Chạy testcase gặp lỗi, sẽ thử lại sau 1 giây…', 'info'));
       updateActive({ tests: result });
       const passed = result.filter((test) => test.status === 'passed').length;
       notify(`Hoàn tất: ${passed}/${result.length} testcase chạy thành công.`, passed === result.length ? 'success' : 'error');
@@ -185,16 +219,34 @@ function App() {
     finally { setBusy(''); }
   };
 
-  const exportAction = async (kind: 'themis' | 'markdown' | 'pdf' | 'docx') => {
+  const exportAllFiles = async () => {
     if (!active) { notify('Hãy mở dự án trước.', 'info'); return; }
     setBusy('export');
     try {
-      const fn = { themis: window.studio.exportThemis, markdown: window.studio.exportMarkdown, pdf: window.studio.exportPdf, docx: window.studio.exportDocx }[kind];
-      const path = await fn(active);
-      if (path) notify(`Đã lưu tệp tại ${path}`);
+      const result = await window.studio.exportAll(active);
+      if (result) {
+        setExportDirectory(result.directory);
+        setExportedProjectId(active.id);
+        notify(`Đã xuất ${result.files.length} tệp vào ${result.directory}.`);
+      } else notify('Đã hủy chọn thư mục xuất.', 'info');
     } catch (error) { notify((error as Error).message, 'error'); }
     finally { setBusy(''); }
   };
+
+  useEffect(() => {
+    if (page !== 'runner' || !active?.tests.length) return;
+    const key = `${active.id}:${active.solution}:${active.tests.map((test) => test.id).join(',')}`;
+    if (active.tests.every((test) => test.status === 'passed') || autoRunnerKey.current === key) return;
+    autoRunnerKey.current = key;
+    void runAllTests();
+  }, [page, active?.id, active?.solution, active?.tests, runAllTests]);
+
+  useEffect(() => {
+    if (page !== 'export' || !active?.tests.length || !active.tests.every((test) => test.status === 'passed')) return;
+    if (autoExportProjectKey.current === active.id) return;
+    autoExportProjectKey.current = active.id;
+    void exportAllFiles();
+  }, [page, active?.id, active?.tests, exportAllFiles]);
 
   const pickImage = (file?: File) => {
     if (!file) return;
@@ -203,6 +255,7 @@ function App() {
     const reader = new FileReader();
     reader.onload = () => {
       const [, data = ''] = String(reader.result).split(',');
+      setSourceMode('image');
       setPhoto({ data, mimeType: file.type, name: file.name });
       if (!active) { notify('Hãy mở dự án trước khi thêm ảnh.', 'error'); return; }
       void window.studio.saveProjectImage(active.id, file.name, file.type, data).then((image) => {
@@ -224,38 +277,174 @@ function App() {
       }
     }
     if (!image) { notify('Chưa có ảnh đề trong dự án.', 'info'); return; }
-    const answer = await runAi({ prompt: 'Đọc nội dung đề lập trình trong ảnh. Chuyển sang Markdown có thể chỉnh sửa, giữ nguyên công thức dưới dạng LaTeX. Không tự suy đoán phần không rõ; ghi [không rõ] nếu cần.', image: { data: image.data, mimeType: image.mimeType }, maxOutputTokens: 4000 }, 'Đang đọc ảnh…');
-    if (answer) { updateActive({ statement: `${active.statement.trim()}\n\n${answer}`, tests: active.tests.map((test) => test.status === 'passed' ? { ...test, status: 'pending' } : test) }); notify('Đã chèn phần trích xuất vào cuối đề bài.'); }
+    const answer = await runAi({ prompt: 'Đọc và chuyển toàn bộ nội dung đề lập trình trong ảnh thành Markdown có thể chỉnh sửa. Giữ nguyên công thức dưới dạng LaTeX. Không tự suy đoán phần không rõ; ghi [không rõ] tại vị trí đó. Chỉ trả về nội dung đề.', image: { data: image.data, mimeType: image.mimeType }, maxOutputTokens: 4000 }, 'Đang đọc ảnh…');
+    if (answer) { updateActive({ statement: answer, tests: [] }); notify('Đã đưa nội dung đọc từ ảnh vào ô đề bài để bạn chỉnh sửa.'); }
   };
 
-  const runAnalysis = async () => {
-    if (!active) return;
-    const answer = await runAi({ prompt: `Phân tích đề lập trình sau bằng tiếng Việt. Trả về các mục: mô tả input/output, ràng buộc, subtasks (nếu có), nhóm testcase nên có, và các trường hợp biên. Không khẳng định giả định chưa nêu.\n\n${active.statement}`, maxOutputTokens: 2500 }, 'Đang phân tích đề…');
-    if (answer) setPage('problem');
+  const draftStatementFromIdea = async () => {
+    const idea = ideaPrompt.trim();
+    if (!idea) { notify('Hãy mô tả ý tưởng bài toán trước.', 'info'); return; }
+    if (active?.statement.trim() && !window.confirm('AI sẽ thay thế nội dung đề hiện tại. Bạn muốn tiếp tục?')) return;
+    const answer = await runAi({ prompt: `Bạn là người biên soạn đề lập trình thi đấu. Từ ý tưởng bên dưới, hãy soạn một đề bài hoàn chỉnh bằng tiếng Việt, trình bày bằng Markdown. Nếu phù hợp, gồm: tên bài, mô tả, dữ liệu vào, dữ liệu ra, ràng buộc, ví dụ và giải thích ví dụ. Không thêm lời chào hay lời dẫn ngoài đề. Không tự bịa quy tắc, giới hạn hoặc kết quả không có cơ sở từ ý tưởng; chỗ nào cần người dùng xác nhận thì ghi rõ [Cần xác nhận: ...].\n\nÝ tưởng bài toán:\n${idea}`, maxOutputTokens: 5000 }, 'Đang soạn đề từ ý tưởng…');
+    if (answer && active) {
+      updateActive({ statement: answer, tests: [] });
+      notify('AI đã đưa bản đề vào ô nội dung. Bạn có thể xem và chỉnh sửa trước khi tiếp tục.');
+    }
   };
 
-  const generateCodeWithAi = async (kind: 'generator' | 'solution') => {
-    if (!active) return;
-    const task = kind === 'generator' ? 'Viết generator C++17 độc lập (không dùng thư viện ngoài) cho đề sau. Đọc seed ở argv[1], số thứ tự test ở argv[2], chế độ ở argv[3]. Chỉ trả về mã C++ trong một code block.' : 'Viết lời giải tham khảo C++17 cho đề sau. Giải thích độ phức tạp trong comment ngắn, chỉ trả mã C++ trong một code block.';
-    const answer = await runAi({ prompt: `${task}\n\n${active.statement}`, maxOutputTokens: 3500 }, `Đang tạo ${kind === 'generator' ? 'generator' : 'lời giải'}…`);
-    const code = answer.match(/```(?:cpp|c\+\+)?\s*([\s\S]*?)```/i)?.[1]?.trim() ?? answer;
-    if (code && kind === 'generator') updateActive({ generator: code });
-    if (code && kind === 'solution') updateActive({ solution: code });
+  const generateCodeWithAi = async (kind: AiWorkflowStep): Promise<string> => {
+    if (!active) return '';
+    const task = kind === 'generator'
+      ? 'Viết generator C++17 hoàn chỉnh, độc lập, tạo input hợp lệ đúng theo đề và các ràng buộc. Chương trình được chạy trong tiến trình mới cho từng testcase; argv[1] là seed cố định của cả lượt sinh, argv[2] là số thứ tự testcase tăng dần, argv[3] là chế độ. Bắt buộc kết hợp seed và số thứ tự testcase để tạo RNG riêng cho từng input; không được chỉ khởi tạo RNG bằng seed. Khi miền dữ liệu cho phép, các số thứ tự testcase khác nhau phải cho input khác nhau một cách đảm bảo bằng phép ánh xạ/hoán vị xác định theo seed, không chỉ dựa vào xác suất ngẫu nhiên tránh trùng. Hỗ trợ đúng các chế độ random, boundary, constructive, stress. Không để TODO hay mã giả. Chỉ trả về mã C++ trong một code block.'
+      : 'Viết lời giải tham khảo C++17 hoàn chỉnh, đúng theo đề và các ràng buộc. Không để TODO hay mã giả. Chỉ trả về mã C++ trong một code block.';
+    const answer = await runAi({ prompt: `${task}\n\n${active.statement}`, maxOutputTokens: 5000 }, `Đang tạo ${kind === 'generator' ? 'generator' : 'lời giải'}…`);
+    const code = answer.match(/```(?:cpp|c\+\+)?\s*([\s\S]*?)```/i)?.[1]?.trim() ?? answer.trim();
+    if (code && kind === 'generator') updateActive({ generator: code, tests: [] });
+    if (code && kind === 'solution' && active) updateActive({ solution: code, tests: active.tests.map((test) => test.status === 'passed' ? { ...test, status: 'pending' } : test) });
+    return code;
+  };
+
+  const isReadyStatement = (project: Project) => Boolean(project.statement.trim() && !project.statement.includes('Nhập đề bài Markdown tại đây'));
+  const isReadyGenerator = (project: Project, source = project.generator) => Boolean(source.trim() && !source.includes('TODO: Thay'));
+  const isReadySolution = (project: Project, source = project.solution) => Boolean(source.trim() && !source.includes('TODO: Dán'));
+  const solutionKey = (project: Project, source = project.solution) => `${project.id}:${source}:${project.tests.map((test) => test.id).join(',')}`;
+  const chooseStepAi = async (choice: Exclude<AiWorkflowChoice, 'unasked'>) => {
+    const step = stepAiPrompt;
+    if (!step) return;
+    setStepAiChoices((current) => ({ ...current, [step]: choice }));
+    setStepAiPrompt(null);
+    if (choice === 'ai') await generateCodeWithAi(step);
+  };
+  const isStepDone = (project: Project, step: typeof workflowSteps[number]) => {
+    if (step.id === 'problem') return isReadyStatement(project);
+    if (step.id === 'generator') return isReadyGenerator(project) && project.tests.length > 0;
+    if (step.id === 'solution') return isReadySolution(project) && (solutionCheckKey === solutionKey(project) || (project.tests.length > 0 && project.tests.every((test) => test.status === 'passed')));
+    if (step.id === 'runner') return project.tests.length > 0 && project.tests.every((test) => test.status === 'passed');
+    return exportedProjectId === project.id;
+  };
+
+  const runGeneratorStep = async () => {
+    if (!active) return false;
+    let source = active.generator;
+    if (!isReadyGenerator(active, source)) {
+      if (stepAiChoices.generator !== 'ai') { notify('Hãy nhập generator C++ hoặc chọn dùng AI ở bước này.', 'info'); return false; }
+      source = await generateCodeWithAi('generator');
+      if (!source || !isReadyGenerator(active, source)) return false;
+    }
+    setBusy('generate');
+    try {
+      const tests = await retryOnce(() => window.studio.generateTests(active.id, generatorCount, active.seed, active.generatorMode, source), () => false, () => notify('Sinh testcase gặp lỗi, sẽ thử lại sau 1 giây…', 'info'));
+      const saved = await window.studio.saveProject({ ...active, generator: source, tests });
+      setActive(saved); setDirty(false);
+      setSolutionCheckKey('');
+      notify(`Đã tự biên dịch generator và sinh ${tests.length} testcase.`);
+      return true;
+    } catch (error) { notify((error as Error).message, 'error'); return false; }
+    finally { setBusy(''); }
+  };
+
+  const verifySolutionStep = async () => {
+    if (!active) return false;
+    let source = active.solution;
+    if (!isReadySolution(active, source)) {
+      if (stepAiChoices.solution !== 'ai') { notify('Hãy nhập lời giải C++ hoặc chọn dùng AI ở bước này.', 'info'); return false; }
+      source = await generateCodeWithAi('solution');
+      if (!source || !isReadySolution(active, source)) return false;
+    }
+    const compiled = await compileSource('solution', source);
+    if (!compiled) return false;
+    setBusy('run');
+    try {
+      const input = runInput || active.tests[0]?.input || '';
+      const result = await retryOnce(() => window.studio.run(active.id, 'solution', input, [], active.timeLimitMs), (attempt) => attempt.timedOut || attempt.exitCode !== 0 || attempt.outputLimited, () => notify('Chạy thử lời giải gặp lỗi, sẽ thử lại sau 1 giây…', 'info'));
+      setRunInput(input);
+      setRunOutput(`${result.timedOut ? 'Quá thời gian.\n' : ''}${result.stdout}${result.stderr ? `\n[stderr]\n${result.stderr}` : ''}${result.exitCode !== 0 && !result.timedOut ? `\nMã thoát: ${result.exitCode}` : ''}`);
+      if (result.timedOut || result.exitCode !== 0 || result.outputLimited) {
+        notify(result.timedOut ? 'Lời giải chạy quá thời gian trên testcase đầu.' : result.outputLimited ? 'Lời giải tạo output quá lớn.' : `Lời giải thoát với mã ${result.exitCode}.`, 'error');
+        return false;
+      }
+      const saved = await window.studio.saveProject({ ...active, solution: source });
+      setActive(saved); setDirty(false);
+      setSolutionCheckKey(solutionKey(active, source));
+      notify('Đã tự biên dịch và chạy thử lời giải trên testcase đầu.');
+      return true;
+    } catch (error) { notify((error as Error).message, 'error'); return false; }
+    finally { setBusy(''); }
   };
 
   const analyzeFileImage = () => fileInput.current?.click();
   const pageContent = () => {
     if (page === 'dashboard') return <Dashboard projects={projects} compilerAvailable={compilerAvailable} compilerName={compilerName} openProject={openProject} newProject={() => setProjectModal(true)} setPage={setPage} />;
     if (page === 'projects') return <Projects projects={projects} openProject={openProject} create={() => setProjectModal(true)} remove={removeProject} />;
-    if (page === 'problem') return active ? <Problem project={active} update={updateActive} onAnalyze={runAnalysis} onPickImage={analyzeFileImage} onExtract={extractImage} photoName={photo?.name ?? active.images.at(-1)?.name} aiBusy={Boolean(busy && busy.startsWith('Đang'))} /> : <EmptyProject create={() => setProjectModal(true)} />;
-    if (page === 'generator') return active ? <Generator project={active} update={updateActive} count={generatorCount} setCount={setGeneratorCount} busy={busy} compile={() => compileSource('generator', active.generator)} generate={generate} askAi={() => generateCodeWithAi('generator')} /> : <EmptyProject create={() => setProjectModal(true)} />;
+    if (page === 'problem') return active ? <Problem project={active} update={updateActive} sourceMode={sourceMode} setSourceMode={setSourceMode} ideaPrompt={ideaPrompt} setIdeaPrompt={setIdeaPrompt} ideaPromptRef={ideaPromptRef} onDraftFromIdea={draftStatementFromIdea} onPickImage={analyzeFileImage} onExtract={extractImage} photoName={photo?.name ?? active.images.at(-1)?.name} aiBusy={Boolean(busy && busy.startsWith('Đang'))} /> : <EmptyProject create={() => setProjectModal(true)} />;
+    if (page === 'generator') return active ? <Generator project={active} update={updateActive} count={generatorCount} setCount={setGeneratorCount} askAi={() => generateCodeWithAi('generator')} busy={busy} /> : <EmptyProject create={() => setProjectModal(true)} />;
     if (page === 'solution') return active ? <Solution project={active} update={updateActive} input={runInput} setInput={setRunInput} output={runOutput} busy={busy} compile={() => compileSource('solution', active.solution)} run={runSolution} askAi={() => generateCodeWithAi('solution')} /> : <EmptyProject create={() => setProjectModal(true)} />;
     if (page === 'runner') return active ? <Runner project={active} busy={busy} runAll={runAllTests} clear={() => updateActive({ tests: [] })} /> : <EmptyProject create={() => setProjectModal(true)} />;
-    if (page === 'export') return active ? <Export project={active} busy={busy} action={exportAction} /> : <EmptyProject create={() => setProjectModal(true)} />;
-    return <SettingsPage settings={settings} hasKeys={hasKeys} aiKey={aiKey} setAiKey={setAiKey} saveKey={saveKey} update={updateSettings} busy={busy} compilerAvailable={compilerAvailable} compilerName={compilerName} test={() => void window.studio.testAiConnection({ provider: settings?.provider, prompt: 'ping' }).then((result) => notify(`Kết nối thành công: ${result}`, 'success')).catch((error: Error) => notify(error.message, 'error'))} removeKey={async (provider) => { await window.studio.removeApiKey(provider); setHasKeys({ ...hasKeys, [provider]: false }); notify('Đã xóa API key.'); }} chooseCompiler={async () => { const file = await window.studio.chooseCompiler(); if (file && settings) { const next = { ...settings, compilerPath: file }; await updateSettings(next); const status = await window.studio.getStatus(); setCompilerAvailable(status.compilerAvailable); setCompilerName(status.compiler); } }} choosePandoc={async () => { const file = await window.studio.choosePandoc(); if (file && settings) await updateSettings({ ...settings, pandocPath: file }); }} />;
+    if (page === 'export') return active ? <Export project={active} busy={busy} directory={exportDirectory} exported={exportedProjectId === active.id} exportAgain={exportAllFiles} /> : <EmptyProject create={() => setProjectModal(true)} />;
+    return <SettingsPage settings={settings} hasKeys={hasKeys} aiKey={aiKey} setAiKey={setAiKey} saveKey={saveKey} update={updateSettings} busy={busy} compilerAvailable={compilerAvailable} compilerName={compilerName} test={() => void window.studio.testAiConnection({ provider: settings?.provider, prompt: 'ping' }).then((result) => notify(`Kết nối thành công: ${result}`, 'success')).catch((error: Error) => notify(error.message, 'error'))} removeKey={async (provider) => { await window.studio.removeApiKey(provider); setHasKeys({ ...hasKeys, [provider]: false }); notify('Đã xóa API key.'); }} chooseCompiler={async () => { const file = await window.studio.chooseCompiler(); if (file && settings) { const next = { ...settings, compilerPath: file }; await updateSettings(next); const status = await window.studio.getStatus(); setCompilerAvailable(status.compilerAvailable); setCompilerName(status.compiler); } }} />;
   };
 
   const currentPage = pageInfo[page];
+  const workflowIndex = workflowSteps.findIndex((step) => step.id === page);
+  const stepDone = (step: typeof workflowSteps[number]) => active ? isStepDone(active, step) : false;
+  const canAccessStep = (index: number) => Boolean(active && workflowSteps.slice(0, index).every((step) => isStepDone(active, step)));
+  const canProceed = !active ? false
+    : page === 'problem' ? isReadyStatement(active)
+      : page === 'generator' ? isReadyGenerator(active) || stepAiChoices.generator === 'ai'
+        : page === 'solution' ? isReadySolution(active) || stepAiChoices.solution === 'ai'
+          : page === 'runner' ? isStepDone(active, workflowSteps[3]) && busy !== 'run-tests'
+            : page === 'export' ? true : false;
+  const nextHint = !active ? 'Hãy mở dự án trước.'
+    : page === 'problem' && !isReadyStatement(active) ? 'Nhập đề hoặc tạo đề từ ý tưởng trước.'
+      : page === 'generator' && !isReadyGenerator(active) && stepAiChoices.generator !== 'ai' ? 'Nhập generator hoặc chọn dùng AI.'
+        : page === 'solution' && !isReadySolution(active) && stepAiChoices.solution !== 'ai' ? 'Nhập lời giải hoặc chọn dùng AI.'
+          : page === 'runner' && !isStepDone(active, workflowSteps[3]) ? 'Đang tự chạy; cần tất cả testcase thành công để tiếp tục.'
+            : workflowIndex < workflowSteps.length - 1 ? `Bước tiếp theo: ${workflowSteps[workflowIndex + 1]?.label}` : 'Bạn đã đến bước cuối cùng';
+
+  useEffect(() => {
+    if (!active || !isWorkflowPage(page)) return;
+    const index = workflowSteps.findIndex((step) => step.id === page);
+    const firstIncomplete = workflowSteps.slice(0, index).find((step) => !isStepDone(active, step));
+    if (firstIncomplete) setPage(firstIncomplete.id);
+  }, [active, page, solutionCheckKey, exportedProjectId, setPage]);
+
+  const moveWorkflow = async (direction: -1 | 1) => {
+    if (!active || busy) return;
+    if (direction < 0) {
+      const previous = workflowSteps[workflowIndex - 1];
+      if (previous && await persistActiveProject()) setPage(previous.id);
+      return;
+    }
+    if (page === 'problem' && !isReadyStatement(active)) { notify('Hãy nhập hoặc tạo nội dung đề trước khi tiếp tục.', 'info'); return; }
+    if (!canProceed) { notify('Hoàn thành nội dung của bước này trước khi tiếp tục.', 'info'); return; }
+    if (!(await persistActiveProject())) return;
+
+    if (page === 'generator') {
+      if (!(await runGeneratorStep())) return;
+      setPage('solution');
+      return;
+    }
+    if (page === 'solution') {
+      if (!(await verifySolutionStep())) return;
+      setPage('runner');
+      return;
+    }
+    if (page === 'runner') {
+      if (!active.tests.length || !active.tests.every((test) => test.status === 'passed')) {
+        notify('Bước kiểm tra chưa hoàn tất. Hãy xem lỗi hoặc chạy lại testcase.', 'info');
+        return;
+      }
+      setPage('export');
+      return;
+    }
+    if (page === 'export') {
+      if (exportedProjectId !== active.id) { await exportAllFiles(); return; }
+      setPage('dashboard');
+      return;
+    }
+    const next = workflowSteps[workflowIndex + 1];
+    if (next) setPage(next.id);
+  };
   return <div className="app-shell">
     <aside className="sidebar">
       <div className="brand"><div className="brand-mark"><Command size={20} /></div><div><strong>CP Test Studio</strong><span>THI LẬP TRÌNH • VI</span></div></div>
@@ -265,7 +454,7 @@ function App() {
       <nav className="side-nav">
         {nav.map((item) => <div key={item.id}>
           {item.section && <div className="nav-section">{item.section}</div>}
-          <button className={`nav-item ${page === item.id ? 'active' : ''}`} onClick={() => setPage(item.id)}><item.icon size={18} strokeWidth={page === item.id ? 2.3 : 1.8} /><span>{item.label}</span>{item.id === 'runner' && active?.tests.length ? <span className="nav-count">{active.tests.length}</span> : null}</button>
+          <button className={`nav-item ${(item.id === 'problem' ? isWorkflowPage(page) : page === item.id) ? 'active' : ''}`} onClick={() => setPage(item.id)}><item.icon size={18} strokeWidth={(item.id === 'problem' ? isWorkflowPage(page) : page === item.id) ? 2.3 : 1.8} /><span>{item.label}</span>{item.id === 'problem' && active?.tests.length ? <span className="nav-count">{active.tests.length}</span> : null}</button>
         </div>)}
       </nav>
       <div className="sidebar-bottom">
@@ -275,17 +464,42 @@ function App() {
     </aside>
 
     <main className="main-area">
-      <header className="topbar"><div className="breadcrumb"><span>CP Test Studio</span><ArrowRight size={13} /><b>{currentPage.title}</b>{active && <><ArrowRight size={13} /><span className="crumb-project">{active.name}</span></>}</div><div className="top-actions"><span className="local-badge"><Shield size={13} /> Dữ liệu trên máy</span>{active && <><span className={`save-indicator ${dirty ? 'pending' : ''}`}><span className="dot" />{dirty ? 'Đang lưu…' : 'Đã lưu'}</span><button className="button button-small button-secondary" onClick={() => void saveProject()}><Save size={14} /> Lưu</button></>}<button className="icon-button" title="Đổi giao diện" onClick={() => settings && void updateSettings({ ...settings, theme: settings.theme === 'dark' ? 'light' : 'dark' })}>{settings?.theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}</button></div></header>
+      <header className="topbar"><div className="breadcrumb"><span>CP Test Studio</span><ArrowRight size={13} /><b>{currentPage.title}</b>{active && <><ArrowRight size={13} /><span className="crumb-project">{active.name}</span></>}</div><div className="top-actions"><span className="local-badge"><Shield size={13} /> Dữ liệu trên máy</span>{active && <span className={`save-indicator ${dirty ? 'pending' : ''}`}><span className="dot" />{dirty ? 'Đang lưu…' : 'Đã lưu tự động'}</span>}<button className="icon-button" title="Đổi giao diện" onClick={() => settings && void updateSettings({ ...settings, theme: settings.theme === 'dark' ? 'light' : 'dark' })}>{settings?.theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}</button></div></header>
       <section className="page-heading"><div><div className="eyebrow">{active ? <><span className="dot green" /> DỰ ÁN ĐANG MỞ</> : 'KHÔNG GIAN SOẠN ĐỀ'}</div><h1>{currentPage.title}</h1><p>{currentPage.subtitle}</p></div>{page !== 'settings' && <div className="heading-actions">{active && <button className="button button-secondary" onClick={() => void window.studio.chooseProjectFolder(active.id)}><FolderOpen size={16} /> Mở thư mục</button>}<button className="button button-primary" onClick={() => setProjectModal(true)}><Plus size={17} /> Dự án mới</button></div>}</section>
       {compilerAvailable === false && page !== 'settings' && <button className="notice notice-warning" onClick={() => setPage('settings')}><TriangleAlert size={17} /><span><b>Chưa tìm thấy trình biên dịch C++.</b> Compiler C++ đi kèm chưa khởi động được. Hãy kiểm tra cài đặt hoặc chọn g++.exe khác.</span><ArrowRight size={15} /></button>}
       {page === 'problem' && active && <input ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={(event) => pickImage(event.target.files?.[0])} />}
-      <div className="page-body">{pageContent()}</div>
+      <div className={`page-body ${isWorkflowPage(page) && active ? 'workflow-page-body' : ''}`}>
+        {isWorkflowPage(page) && active ? <div className="workflow-layout">
+          <aside className="workflow-stepper" aria-label="Các bước soạn đề">
+            <div className="stepper-heading"><span>TIẾN ĐỘ SOẠN ĐỀ</span><b>Bước {workflowIndex + 1} / {workflowSteps.length}</b></div>
+            <div className="stepper-list">{workflowSteps.map((step, index) => {
+              const StepIcon = step.icon;
+              const current = step.id === page;
+              const done = stepDone(step);
+              return <button key={step.id} className={`workflow-step ${current ? 'current' : ''} ${done ? 'done' : ''}`} onClick={() => setPage(step.id)} disabled={!canAccessStep(index) || Boolean(busy)} aria-current={current ? 'step' : undefined}>
+                <span className="workflow-step-marker">{done && !current ? <Check size={14} /> : <StepIcon size={14} />}</span>
+                <span className="workflow-step-copy"><b>{step.label}</b><small>{step.description}</small></span>
+                {index < workflowSteps.length - 1 && <span className="workflow-step-line" />}
+              </button>;
+            })}</div>
+            <div className="stepper-project"><Folder size={14} /><span><small>ĐANG SOẠN</small><b>{active.name}</b></span></div>
+          </aside>
+          <div className="workflow-main">
+            {pageContent()}
+            <div className="workflow-actions">
+              <button className="button button-secondary" onClick={() => void moveWorkflow(-1)} disabled={workflowIndex === 0 || Boolean(busy)}><ArrowLeft size={15} /> Quay lại</button>
+              <span>{nextHint}</span>
+              <button className="button button-primary" onClick={() => void moveWorkflow(1)} disabled={!canProceed || Boolean(busy)}>{workflowIndex < workflowSteps.length - 1 ? <>Tiếp theo <ArrowRight size={15} /></> : exportedProjectId === active.id ? <>Hoàn tất <Check size={15} /></> : <>Xuất lại <ArrowDownToLine size={15} /></>}</button>
+            </div>
+          </div>
+        </div> : pageContent()}
+      </div>
       <footer className="app-footer"><span>CP Test Studio <span className="footer-sep">•</span> MVP 0.1</span><span><HardDrive size={13} /> Lưu ngoại tuyến <span className="footer-sep">•</span> {active ? active.tests.length : 0} testcase</span></footer>
     </main>
 
     {projectModal && <Modal title="Tạo dự án mới" subtitle="Mỗi dự án lưu đề bài, mã nguồn và testcase trong một thư mục riêng." close={() => setProjectModal(false)}><label className="field-label">Tên dự án</label><input autoFocus className="text-input" value={projectName} onChange={(event) => setProjectName(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && void createProject()} placeholder="Ví dụ: Bài toán dãy con tăng" /><div className="modal-actions"><button className="button button-secondary" onClick={() => setProjectModal(false)}>Hủy</button><button className="button button-primary" onClick={() => void createProject()}><Plus size={16} /> Tạo dự án</button></div></Modal>}
+    {stepAiPrompt && active && <Modal title={stepAiPrompt === 'generator' ? 'Dùng AI tạo Generator?' : 'Dùng AI tạo lời giải?'} subtitle="Bạn có thể để AI tạo mã nguồn vào ô soạn thảo, hoặc bỏ qua và tự nhập." close={() => void chooseStepAi('manual')}><div className="welcome-banner"><div className="welcome-icon"><Sparkles size={21} /></div><div><b>{stepAiPrompt === 'generator' ? 'Tạo chương trình sinh dữ liệu' : 'Tạo chương trình lời giải'}</b><p>Mã nguồn AI tạo sẽ nằm trong ô soạn thảo để bạn xem và chỉnh sửa trước khi biên dịch.</p></div></div><div className="modal-actions"><button className="button button-plain" onClick={() => void chooseStepAi('manual')}>Bỏ qua, tự nhập</button><button className="button button-primary" onClick={() => void chooseStepAi('ai')}>Dùng AI <ArrowRight size={15} /></button></div></Modal>}
     {onboarding && settings && <Modal title="Chào mừng đến CP Test Studio" subtitle="Soạn đề và chạy bộ test ngay trên máy. API AI là tùy chọn, bạn có thể cấu hình sau." close={() => void finishOnboarding(true)} wide><div className="welcome-banner"><div className="welcome-icon"><Rocket size={23} /></div><div><b>Bắt đầu làm việc theo cách của bạn</b><p>Không cần tài khoản. Dự án được lưu trên máy, các thao tác biên dịch và tạo testcase chạy ngoại tuyến.</p></div></div><div className="onboard-api"><div><label className="field-label">Nhà cung cấp AI (không bắt buộc)</label><select className="text-input" value={settings.provider} onChange={(event) => void updateSettings({ ...settings, provider: event.target.value as Provider })}><option value="openai">OpenAI</option><option value="gemini">Google Gemini</option></select></div><div><label className="field-label">API key</label><div className="input-with-button"><input className="text-input" type="password" value={aiKey} onChange={(event) => setAiKey(event.target.value)} placeholder="Có thể bỏ qua và thêm sau" /><KeyRound size={16} /></div></div></div><div className="security-note"><Shield size={16} /><span>API key được mã hóa bởi Windows và chỉ gửi khi bạn chủ động dùng tính năng AI.</span></div><div className="modal-actions"><button className="button button-plain" onClick={() => void finishOnboarding(true)}>Bỏ qua, dùng không cần AI</button><button className="button button-primary" onClick={() => void finishOnboarding(false)} disabled={Boolean(aiKey && busy === 'key')}>Bắt đầu sử dụng <ArrowRight size={16} /></button></div></Modal>}
-    {aiResult && <div className="result-drawer"><div className="result-head"><div><Sparkles size={16} /><b>Kết quả từ AI</b></div><button className="icon-button" onClick={() => setAiResult('')}><X size={16} /></button></div><div className="result-content"><ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>{aiResult}</ReactMarkdown></div></div>}
     {toast && <div className={`toast toast-${toast.kind}`}><span className="toast-mark">{toast.kind === 'success' ? <Check size={16} /> : toast.kind === 'error' ? <TriangleAlert size={16} /> : <CircleHelp size={16} />}</span>{toast.text}<button onClick={() => setToast(null)}><X size={15} /></button></div>}
     {busy && <div className="busy-pill"><LoaderCircle size={15} className="spin" />{busy.startsWith('Đang') ? busy : busy === 'run-tests' ? 'Đang chạy testcase…' : busy === 'generate' ? 'Đang sinh testcase…' : busy === 'export' ? 'Đang xuất tệp…' : busy === 'key' ? 'Đang lưu API key…' : busy.startsWith('compile') ? 'Đang biên dịch…' : busy === 'run' ? 'Đang chạy chương trình…' : busy}</div>}
   </div>;
@@ -313,12 +527,34 @@ function Projects({ projects, openProject, create, remove }: { projects: Project
 
 function EmptyProject({ create }: { create: () => void }) { return <div className="empty-state"><div className="empty-icon large"><FolderOpen size={26} /></div><h3>Chưa mở dự án</h3><p>Tạo một dự án để bắt đầu nhập đề, viết mã và tạo testcase.</p><button className="button button-primary" onClick={create}><Plus size={16} /> Tạo dự án</button></div>; }
 
-function Problem({ project, update, onAnalyze, onPickImage, onExtract, photoName, aiBusy }: { project: Project; update: (p: Partial<Project>) => void; onAnalyze: () => void; onPickImage: () => void; onExtract: () => void; photoName?: string; aiBusy: boolean }) {
-  return <div className="editor-layout"><div className="panel editor-panel"><div className="panel-toolbar"><div className="toolbar-title"><FileText size={16} /><b>Nội dung đề</b><span className="format-pill">MARKDOWN</span></div><div className="toolbar-actions"><button className="button button-secondary button-small" onClick={onPickImage}><FileImage size={14} /> Thêm ảnh đề</button><button className="button button-primary button-small" onClick={onAnalyze} disabled={aiBusy}><Sparkles size={14} /> Phân tích bằng AI</button></div></div><div className="document-title"><input value={project.name} onChange={(e) => update({ name: e.target.value })} aria-label="Tên dự án" /><span>ĐỀ BÀI / MÔ TẢ</span></div><textarea className="code-textarea markdown-input" spellCheck={false} value={project.statement} onChange={(e) => update({ statement: e.target.value, tests: project.tests.map((test) => test.status === 'passed' ? { ...test, status: 'pending' } : test) })} placeholder="Nhập đề bài bằng Markdown..." /><div className="editor-footer"><span><span className="dot green" /> Tự lưu trên máy</span><span>Markdown · LaTeX <span className="footer-sep">·</span> {project.statement.length} ký tự</span></div>{photoName && <div className="photo-strip"><FileImage size={14} /> {photoName}<button onClick={onExtract}><Sparkles size={14} /> Đọc ảnh bằng AI</button></div>}</div><div className="panel preview-panel"><div className="panel-toolbar"><div className="toolbar-title"><BookOpen size={16} /><b>Xem trước</b></div><span className="preview-live"><span className="dot green" /> TRỰC TIẾP</span></div><div className="markdown-preview"><ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>{project.statement || '*Nội dung xem trước sẽ hiện tại đây.*'}</ReactMarkdown></div></div></div>;
+function Problem({ project, update, sourceMode, setSourceMode, ideaPrompt, setIdeaPrompt, ideaPromptRef, onDraftFromIdea, onPickImage, onExtract, photoName, aiBusy }: { project: Project; update: (p: Partial<Project>) => void; sourceMode: 'text' | 'image'; setSourceMode: (mode: 'text' | 'image') => void; ideaPrompt: string; setIdeaPrompt: (value: string) => void; ideaPromptRef: React.RefObject<HTMLTextAreaElement | null>; onDraftFromIdea: () => void; onPickImage: () => void; onExtract: () => void; photoName?: string; aiBusy: boolean }) {
+  return <div className="problem-compose">
+    <section className="source-picker">
+      <div className="source-picker-heading"><div><h3>Bạn muốn bắt đầu đề bài từ đâu?</h3><p>Chọn một cách soạn. Nội dung sau đó vẫn có thể chỉnh sửa trực tiếp.</p></div></div>
+      <div className="source-options">
+        <button className={`source-option ${sourceMode === 'text' ? 'selected' : ''}`} onClick={() => setSourceMode('text')}>
+          <span className="source-option-icon"><FileText size={18} /></span><span className="source-option-copy"><b>Từ ý tưởng, nhập văn bản</b><small>Tự viết nội dung đề bằng tiếng Việt hoặc Markdown.</small></span><span className="source-radio" />
+        </button>
+        <button className={`source-option ${sourceMode === 'image' ? 'selected' : ''}`} onClick={() => setSourceMode('image')}>
+          <span className="source-option-icon image"><FileImage size={18} /></span><span className="source-option-copy"><b>Lấy đề từ ảnh</b><small>Chọn ảnh đề bài; có thể nhờ AI đọc thành văn bản.</small></span><span className="source-radio" />
+        </button>
+      </div>
+    </section>
+    {sourceMode === 'text' && <section className="idea-prompt panel">
+      <div className="idea-prompt-heading"><div className="source-option-icon"><Sparkles size={17} /></div><div><b>Ý tưởng bài toán</b><small>Mô tả ngắn để AI phát triển thành đề hoàn chỉnh.</small></div></div>
+      <textarea ref={ideaPromptRef} value={ideaPrompt} onChange={(event) => setIdeaPrompt(event.target.value)} placeholder="Ví dụ: Cho một dãy số, hãy tìm tổng lớn nhất của đoạn con liên tiếp..." />
+      <div className="idea-prompt-footer"><span>Kết quả sẽ điền vào ô nội dung đề bên dưới để bạn kiểm tra và chỉnh sửa.</span><button className="button button-primary button-small" onClick={onDraftFromIdea} disabled={aiBusy}><Sparkles size={14} /> Soạn đề bằng AI</button></div>
+    </section>}
+    {sourceMode === 'image' && <section className="image-source panel">
+      <div className="image-source-copy"><span className="image-source-icon"><FileImage size={18} /></span><div><b>{photoName || 'Chưa chọn ảnh đề bài'}</b><small>{photoName ? 'Ảnh đã lưu trong dự án. Bạn có thể đọc ảnh để đưa nội dung vào phần soạn thảo.' : 'Hỗ trợ PNG, JPG hoặc WebP, tối đa 10 MB.'}</small></div></div>
+      <div className="image-source-actions"><button className="button button-secondary button-small" onClick={onPickImage}><FileImage size={14} /> {photoName ? 'Đổi ảnh' : 'Chọn ảnh'}</button>{photoName && <button className="button button-primary button-small" onClick={onExtract} disabled={aiBusy}><Sparkles size={14} /> Đọc ảnh bằng AI</button>}</div>
+    </section>}
+    <div className="editor-layout"><div className="panel editor-panel"><div className="panel-toolbar"><div className="toolbar-title"><FileText size={16} /><b>{sourceMode === 'image' ? 'Nội dung trích xuất / chỉnh sửa' : 'Nội dung đề'}</b><span className="format-pill">MARKDOWN</span></div></div><div className="document-title"><input value={project.name} onChange={(e) => update({ name: e.target.value })} aria-label="Tên dự án" /><span>ĐỀ BÀI / MÔ TẢ</span></div><textarea className="code-textarea markdown-input" spellCheck={false} value={project.statement} onChange={(e) => update({ statement: e.target.value, tests: [] })} placeholder={sourceMode === 'image' ? 'Nội dung đọc từ ảnh sẽ hiện tại đây. Bạn cũng có thể tự nhập hoặc chỉnh sửa.' : 'Nhập ý tưởng hoặc soạn đề bằng Markdown...'} /><div className="editor-footer"><span><span className="dot green" /> Tự lưu trên máy</span><span>Markdown · LaTeX <span className="footer-sep">·</span> {project.statement.length} ký tự</span></div></div><div className="panel preview-panel"><div className="panel-toolbar"><div className="toolbar-title"><BookOpen size={16} /><b>Xem trước</b></div><span className="preview-live"><span className="dot green" /> TRỰC TIẾP</span></div><div className="markdown-preview"><ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>{project.statement || '*Nội dung xem trước sẽ hiện tại đây.*'}</ReactMarkdown></div></div></div>
+  </div>;
 }
 
-function Generator({ project, update, count, setCount, busy, compile, generate, askAi }: { project: Project; update: (p: Partial<Project>) => void; count: number; setCount: (n: number) => void; busy: string; compile: () => void; generate: () => void; askAi: () => void }) {
-  return <div className="feature-stack"><div className="panel feature-intro"><div className="feature-icon purple"><Braces size={20} /></div><div><h3>Generator C++17</h3><p>Chương trình nhận <code>seed</code>, <code>testIndex</code>, <code>mode</code> lần lượt qua argv[1..3]. Mỗi lần chạy cần in đúng một input ra stdout.</p></div><div className="intro-actions"><button className="button button-secondary button-small" onClick={askAi}><Sparkles size={14} /> Gợi ý bằng AI</button><button className="button button-secondary button-small" onClick={compile} disabled={busy === 'compile-generator'}><Code2 size={14} /> Biên dịch</button></div></div><div className="panel code-panel"><div className="panel-toolbar"><div className="toolbar-title"><FileCode2 size={16} /><b>generator.cpp</b><span className="format-pill">C++17</span></div><span className="code-hint">Mã chạy cục bộ</span></div><textarea className="code-textarea cpp-input" spellCheck={false} value={project.generator} onChange={(e) => update({ generator: e.target.value })} /></div><div className="panel generate-controls"><div><h3>Tham số sinh test</h3><p>Generator được chạy từng test một lần; không gọi API theo testcase.</p></div><div className="generate-fields"><label><span>Số lượng test</span><input type="number" min={1} max={500} value={count} onChange={(e) => setCount(Math.max(1, Math.min(500, Number(e.target.value))))} /></label><label><span>Seed bắt đầu</span><input type="number" value={project.seed} onChange={(e) => update({ seed: Number(e.target.value) })} /></label><label><span>Nhóm dữ liệu</span><select value={project.generatorMode} onChange={(e) => update({ generatorMode: e.target.value as Project['generatorMode'] })}><option value="random">Ngẫu nhiên</option><option value="boundary">Biên</option><option value="constructive">Có cấu trúc</option><option value="stress">Stress</option></select></label><button className="button button-primary" onClick={generate} disabled={busy === 'generate'}><Play size={15} /> Sinh {count} testcase</button></div></div></div>;
+function Generator({ project, update, count, setCount, askAi, busy }: { project: Project; update: (p: Partial<Project>) => void; count: number; setCount: (n: number) => void; askAi: () => void; busy: string }) {
+  return <div className="feature-stack"><div className="panel feature-intro"><div className="feature-icon purple"><Braces size={20} /></div><div><h3>Generator C++17</h3><p>Chương trình nhận <code>seed</code>, <code>testIndex</code>, <code>mode</code> lần lượt qua argv[1..3]. Mỗi lần chạy cần in đúng một input ra stdout.</p></div><div className="intro-actions"><button className="button button-secondary button-small" onClick={askAi} disabled={Boolean(busy)}><Sparkles size={14} /> Gợi ý bằng AI</button></div></div><div className="panel code-panel"><div className="panel-toolbar"><div className="toolbar-title"><FileCode2 size={16} /><b>generator.cpp</b><span className="format-pill">C++17</span></div><span className="code-hint">Mã chạy cục bộ</span></div><textarea className="code-textarea cpp-input" spellCheck={false} value={project.generator} onChange={(e) => update({ generator: e.target.value, tests: [] })} /></div><div className="panel generate-controls"><div><h3>Tham số sinh test</h3><p>Khi bấm “Tiếp theo”, ứng dụng tự biên dịch generator và sinh testcase.</p></div><div className="generate-fields"><label><span>Số lượng test</span><input type="number" min={1} max={500} value={count} onChange={(e) => { setCount(Math.max(1, Math.min(500, Number(e.target.value)))); update({ tests: [] }); }} /></label><label><span>Seed bắt đầu</span><input type="number" value={project.seed} onChange={(e) => update({ seed: Number(e.target.value), tests: [] })} /></label><label><span>Nhóm dữ liệu</span><select value={project.generatorMode} onChange={(e) => update({ generatorMode: e.target.value as Project['generatorMode'], tests: [] })}><option value="random">Ngẫu nhiên</option><option value="boundary">Biên</option><option value="constructive">Có cấu trúc</option><option value="stress">Stress</option></select></label></div></div></div>;
 }
 
 function Solution({ project, update, input, setInput, output, busy, compile, run, askAi }: { project: Project; update: (p: Partial<Project>) => void; input: string; setInput: (s: string) => void; output: string; busy: string; compile: () => void; run: () => void; askAi: () => void }) {
@@ -336,15 +572,15 @@ function TestRow({ test, index }: { test: TestCase; index: number }) {
   return <div className="test-row-wrap"><button className="test-row" onClick={() => setOpen(!open)}><span className="test-name"><span className="test-index">{String(index + 1).padStart(2, '0')}</span><b>{test.name}</b></span><span className="test-contents">{test.input.slice(0, 56).replaceAll('\n', ' ↵ ') || <i>(rỗng)</i>}</span><span className="test-contents">{test.output.slice(0, 48).replaceAll('\n', ' ↵ ') || <i>Chưa có output</i>}</span><span className={`status-pill status-${test.status}`}><span className="dot" />{label[test.status]}</span><span className="test-runtime">{test.runtimeMs ? `${test.runtimeMs} ms` : '—'} <ChevronDown size={14} /></span></button>{open && <div className="test-detail"><div><b>Input</b><pre>{test.input || '(rỗng)'}</pre></div><div><b>Output</b><pre>{test.output || '(chưa có output)'}</pre></div>{test.stderr && <div className="stderr-detail"><b>Thông báo</b><pre>{test.stderr}</pre></div>}</div>}</div>;
 }
 
-function Export({ project, busy, action }: { project: Project; busy: string; action: (kind: 'themis' | 'markdown' | 'pdf' | 'docx') => void }) {
-  const ready = project.tests.filter((test) => test.status === 'passed').length;
-  return <div className="export-layout"><section className="panel export-main"><div className="export-title"><div className="feature-icon orange"><Download size={20} /></div><div><h3>Xuất bộ testcase Themis</h3><p>Mỗi test được đóng gói vào một thư mục riêng, gồm <code>BAI.INP</code> và <code>BAI.OUT</code>.</p></div></div><div className="zip-preview"><div className="zip-tree-head"><Folder size={15} /> CẤU TRÚC BÊN TRONG ZIP <span>{ready} test sẵn sàng</span></div><div className="tree-line"><span className="tree-guide">├─</span><Folder size={15} /> BAI/</div>{project.tests.slice(0, 4).map((test, i) => <div className="tree-children" key={test.id}><div><span className="tree-guide">{i === Math.min(project.tests.length, 4) - 1 ? '└─' : '├─'}</span><Folder size={14} /> {`TEST${String(i + 1).padStart(2, '0')}/`}</div><div className="tree-file"><span>│&nbsp;&nbsp;├─</span><FileText size={13} /> BAI.INP</div><div className="tree-file"><span>│&nbsp;&nbsp;└─</span><FileText size={13} /> BAI.OUT</div></div>)}{project.tests.length > 4 && <div className="tree-more">└─ … {project.tests.length - 4} thư mục test khác</div>}{!project.tests.length && <div className="tree-empty">Sinh testcase để xem cấu trúc gói.</div>}</div><div className="export-actions"><button className="button button-primary" onClick={() => action('themis')} disabled={busy === 'export' || !project.tests.length}><Download size={16} /> Xuất Themis ZIP</button><span>{ready}/{project.tests.length} test có output đã xác nhận</span></div></section><section className="panel document-export"><div className="section-heading"><div><h3>Xuất đề bài</h3><p>Tạo bản chia sẻ hoặc in ấn.</p></div></div><button className="export-format-row" onClick={() => action('markdown')}><div className="export-format-icon markdown-icon">M↓</div><div><b>Markdown</b><small>Xuất nội dung .md nguyên bản</small></div><ArrowRight size={16} /></button><button className="export-format-row" onClick={() => action('pdf')}><div className="export-format-icon pdf-icon">PDF</div><div><b>Tài liệu PDF</b><small>In ra PDF, hỗ trợ tiếng Việt</small></div><ArrowRight size={16} /></button><button className="export-format-row" onClick={() => action('docx')}><div className="export-format-icon docx-icon">W</div><div><b>Tài liệu DOCX</b><small>Cần cài Pandoc trên máy</small></div><ArrowRight size={16} /></button><div className="export-hint"><CircleHelp size={15} /><span>Chỉ testcase đã chạy thành công mới được đưa vào gói xuất mặc định.</span></div></section></div>;
+function Export({ project, busy, directory, exported, exportAgain }: { project: Project; busy: string; directory: string; exported: boolean; exportAgain: () => void }) {
+  const files = [`${project.name}.md`, `${project.name}.pdf`, `${project.name}.docx`, `${project.name}.zip`];
+  return <div className="feature-stack"><section className="panel export-main"><div className="export-title"><div className={`feature-icon ${exported ? 'teal' : 'orange'}`}>{exported ? <Check size={20} /> : <Download size={20} />}</div><div><h3>{exported ? 'Đã xuất trọn bộ đề' : 'Chọn nơi lưu bộ đề'}</h3><p>Khi vào bước này, ứng dụng tự mở hộp thoại chọn thư mục và xuất toàn bộ tệp.</p></div></div><div className="export-all-list">{files.map((file, index) => <div key={file}><span className={`export-format-icon ${index === 1 ? 'pdf-icon' : index === 2 ? 'docx-icon' : 'markdown-icon'}`}>{['MD', 'PDF', 'W', 'ZIP'][index]}</span><span><b>{file}</b><small>{['Đề bài Markdown', 'Bản in đã định dạng', 'Tài liệu Word', 'Bộ testcase Themis'][index]}</small></span>{exported && <Check size={16} />}</div>)}</div>{directory && <div className="export-directory"><FolderOpen size={16} /><span><small>ĐÃ LƯU TẠI</small><b>{directory}</b></span></div>}<div className="export-actions"><button className="button button-primary" onClick={exportAgain} disabled={busy === 'export'}><Download size={16} /> {exported ? 'Chọn thư mục khác / xuất lại' : 'Mở hộp thoại chọn nơi lưu'}</button><span>{project.tests.length} testcase đã kiểm tra</span></div></section></div>;
 }
 
-function SettingsPage({ settings, hasKeys, aiKey, setAiKey, saveKey, update, busy, compilerAvailable, compilerName, test, removeKey, chooseCompiler, choosePandoc }: { settings: Settings | null; hasKeys: Record<Provider, boolean>; aiKey: string; setAiKey: (key: string) => void; saveKey: (provider: Provider) => void; update: (settings: Settings) => void; busy: string; compilerAvailable: boolean; compilerName: string; test: () => void; removeKey: (provider: Provider) => void; chooseCompiler: () => void; choosePandoc: () => void }) {
+function SettingsPage({ settings, hasKeys, aiKey, setAiKey, saveKey, update, busy, compilerAvailable, compilerName, test, removeKey, chooseCompiler }: { settings: Settings | null; hasKeys: Record<Provider, boolean>; aiKey: string; setAiKey: (key: string) => void; saveKey: (provider: Provider) => void; update: (settings: Settings) => void; busy: string; compilerAvailable: boolean; compilerName: string; test: () => void; removeKey: (provider: Provider) => void; chooseCompiler: () => void }) {
   const [provider, setProvider] = useState<Provider>('openai');
   if (!settings) return <div className="panel loading-settings"><LoaderCircle className="spin" /> Đang tải cài đặt…</div>;
-  return <div className="settings-layout"><div className="settings-column"><section className="panel settings-card"><div className="settings-title"><div className="settings-icon purple"><Sparkles size={18} /></div><div><h3>Trợ lý AI</h3><p>Chỉ gửi nội dung khi bạn bấm một chức năng AI.</p></div><span className="optional-tag">TÙY CHỌN</span></div><div className="provider-tabs"><button className={provider === 'openai' ? 'selected' : ''} onClick={() => setProvider('openai')}>OpenAI</button><button className={provider === 'gemini' ? 'selected' : ''} onClick={() => setProvider('gemini')}>Google Gemini</button></div><div className="settings-form-grid"><label><span>Model mặc định</span><input className="text-input" value={settings.models[provider]} onChange={(e) => update({ ...settings, models: { ...settings.models, [provider]: e.target.value } })} placeholder={provider === 'openai' ? 'gpt-4.1-mini' : 'gemini-2.5-flash'} /></label><label><span>Provider mặc định</span><select className="text-input" value={settings.provider} onChange={(e) => update({ ...settings, provider: e.target.value as Provider })}><option value="openai">OpenAI</option><option value="gemini">Google Gemini</option></select></label></div><label className="field-label api-label">API key {hasKeys[provider] && <span className="key-saved"><BadgeCheck size={13} /> Đã lưu an toàn</span>}</label><div className="api-key-row"><div className="input-with-button"><input className="text-input" type="password" value={aiKey} onChange={(e) => setAiKey(e.target.value)} placeholder={hasKeys[provider] ? 'Nhập key mới để thay thế' : 'Dán API key tại đây'} /><KeyRound size={16} /></div><button className="button button-primary" onClick={() => saveKey(provider)} disabled={busy === 'key'}><Save size={15} /> Lưu key</button></div><div className="security-note"><Shield size={15} /><span>Key được mã hóa bằng cơ chế bảo vệ thông tin của Windows; không lưu trong file dự án.</span></div><div className="settings-actions"><button className="button button-secondary button-small" onClick={test} disabled={!hasKeys[provider]}><Activity size={14} /> Kiểm tra kết nối</button>{hasKeys[provider] && <button className="button button-danger button-small" onClick={() => removeKey(provider)}><Trash2 size={14} /> Xóa key</button>}</div></section><section className="panel settings-card"><div className="settings-title"><div className="settings-icon blue"><Code2 size={18} /></div><div><h3>Compiler C++</h3><p>Ứng dụng dùng MinGW-w64 đi kèm; bạn có thể chọn compiler khác nếu cần.</p></div></div><div className="environment-row"><span className="env-indicator"><span className={`dot ${compilerAvailable ? 'green' : 'warn'}`}/></span><div><b>{compilerAvailable ? 'Đã tìm thấy compiler' : 'Chưa tìm thấy g++'}</b><small>{compilerName || settings.compilerPath || 'Compiler C++ đi kèm ứng dụng'}</small></div><button className="button button-secondary button-small" onClick={chooseCompiler}>Chọn g++.exe</button></div><div className="setup-hint"><b>Compiler đã đi kèm ứng dụng</b><span>Không cần cài MinGW-w64 hoặc sửa PATH của Windows. Bạn có thể chọn g++.exe khác nếu muốn.</span></div></section><section className="panel settings-card"><div className="settings-title"><div className="settings-icon orange"><FileText size={18} /></div><div><h3>Pandoc</h3><p>Chỉ cần nếu bạn muốn xuất đề bài sang DOCX.</p></div><button className="button button-secondary button-small" onClick={choosePandoc}>Chọn pandoc.exe</button></div><div className="path-display">{settings.pandocPath || 'Tự tìm pandoc trong PATH'}</div></section></div><aside className="settings-aside"><div className="panel privacy-card"><div className="privacy-lock"><Shield size={22} /></div><h3>Riêng tư theo mặc định</h3><p>Đề bài, source code, testcase và output được lưu cục bộ trong hồ sơ người dùng Windows.</p><div className="privacy-rule"><Check size={15} /> Không cần đăng nhập</div><div className="privacy-rule"><Check size={15} /> Không có backend cloud</div><div className="privacy-rule"><Check size={15} /> AI chỉ chạy theo yêu cầu</div></div><div className="panel theme-card"><div className="settings-title"><div className="settings-icon gray"><Sun size={17} /></div><div><h3>Giao diện</h3><p>Sáng hoặc tối.</p></div></div><div className="theme-options"><button className={settings.theme === 'light' ? 'selected' : ''} onClick={() => update({ ...settings, theme: 'light' })}><Sun size={16} /> Sáng</button><button className={settings.theme === 'dark' ? 'selected' : ''} onClick={() => update({ ...settings, theme: 'dark' })}><Moon size={16} /> Tối</button></div></div><div className="version-card"><Github size={15} /><span>CP Test Studio</span><b>0.1.0 MVP</b></div></aside></div>;
+  return <div className="settings-layout"><div className="settings-column"><section className="panel settings-card"><div className="settings-title"><div className="settings-icon purple"><Sparkles size={18} /></div><div><h3>Trợ lý AI</h3><p>Chỉ gửi nội dung khi bạn bấm một chức năng AI.</p></div><span className="optional-tag">TÙY CHỌN</span></div><div className="provider-tabs"><button className={provider === 'openai' ? 'selected' : ''} onClick={() => setProvider('openai')}>OpenAI</button><button className={provider === 'gemini' ? 'selected' : ''} onClick={() => setProvider('gemini')}>Google Gemini</button></div><div className="settings-form-grid"><label><span>Model mặc định</span><input className="text-input" value={settings.models[provider]} onChange={(e) => update({ ...settings, models: { ...settings.models, [provider]: e.target.value } })} placeholder={provider === 'openai' ? 'gpt-4.1-mini' : 'gemini-2.5-flash'} /></label><label><span>Provider mặc định</span><select className="text-input" value={settings.provider} onChange={(e) => update({ ...settings, provider: e.target.value as Provider })}><option value="openai">OpenAI</option><option value="gemini">Google Gemini</option></select></label></div><label className="field-label api-label">API key {hasKeys[provider] && <span className="key-saved"><BadgeCheck size={13} /> Đã lưu an toàn</span>}</label><div className="api-key-row"><div className="input-with-button"><input className="text-input" type="password" value={aiKey} onChange={(e) => setAiKey(e.target.value)} placeholder={hasKeys[provider] ? 'Nhập key mới để thay thế' : 'Dán API key tại đây'} /><KeyRound size={16} /></div><button className="button button-primary" onClick={() => saveKey(provider)} disabled={busy === 'key'}><Save size={15} /> Lưu key</button></div><div className="security-note"><Shield size={15} /><span>Key được mã hóa bằng cơ chế bảo vệ thông tin của Windows; không lưu trong file dự án.</span></div><div className="settings-actions"><button className="button button-secondary button-small" onClick={test} disabled={!hasKeys[provider]}><Activity size={14} /> Kiểm tra kết nối</button>{hasKeys[provider] && <button className="button button-danger button-small" onClick={() => removeKey(provider)}><Trash2 size={14} /> Xóa key</button>}</div></section><section className="panel settings-card"><div className="settings-title"><div className="settings-icon blue"><Code2 size={18} /></div><div><h3>Compiler C++</h3><p>Ứng dụng dùng MinGW-w64 đi kèm; bạn có thể chọn compiler khác nếu cần.</p></div></div><div className="environment-row"><span className="env-indicator"><span className={`dot ${compilerAvailable ? 'green' : 'warn'}`}/></span><div><b>{compilerAvailable ? 'Đã tìm thấy compiler' : 'Chưa tìm thấy g++'}</b><small>{compilerName || settings.compilerPath || 'Compiler C++ đi kèm ứng dụng'}</small></div><button className="button button-secondary button-small" onClick={chooseCompiler}>Chọn g++.exe</button></div><div className="setup-hint"><b>Compiler đã đi kèm ứng dụng</b><span>Không cần cài MinGW-w64 hoặc sửa PATH của Windows. Bạn có thể chọn g++.exe khác nếu muốn.</span></div></section><section className="panel settings-card"><div className="settings-title"><div className="settings-icon orange"><FileText size={18} /></div><div><h3>Xuất tài liệu</h3><p>Markdown, PDF và DOCX được tạo trực tiếp trong ứng dụng, không cần cài Pandoc.</p></div></div></section></div><aside className="settings-aside"><div className="panel privacy-card"><div className="privacy-lock"><Shield size={22} /></div><h3>Riêng tư theo mặc định</h3><p>Đề bài, source code, testcase và output được lưu cục bộ trong hồ sơ người dùng Windows.</p><div className="privacy-rule"><Check size={15} /> Không cần đăng nhập</div><div className="privacy-rule"><Check size={15} /> Không có backend cloud</div><div className="privacy-rule"><Check size={15} /> AI chỉ chạy theo yêu cầu</div></div><div className="panel theme-card"><div className="settings-title"><div className="settings-icon gray"><Sun size={17} /></div><div><h3>Giao diện</h3><p>Sáng hoặc tối.</p></div></div><div className="theme-options"><button className={settings.theme === 'light' ? 'selected' : ''} onClick={() => update({ ...settings, theme: 'light' })}><Sun size={16} /> Sáng</button><button className={settings.theme === 'dark' ? 'selected' : ''} onClick={() => update({ ...settings, theme: 'dark' })}><Moon size={16} /> Tối</button></div></div><div className="version-card"><Github size={15} /><span>CP Test Studio</span><b>0.1.0 MVP</b></div></aside></div>;
 }
 
 function Modal({ title, subtitle, close, children, wide = false }: { title: string; subtitle: string; close: () => void; children: React.ReactNode; wide?: boolean }) { return <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && close()}><div className={`modal ${wide ? 'modal-wide' : ''}`}><button className="icon-button modal-close" onClick={close}><X size={17} /></button><div className="modal-heading"><div className="brand-mark small-mark"><Command size={16} /></div><div><h2>{title}</h2><p>{subtitle}</p></div></div>{children}</div></div>; }
