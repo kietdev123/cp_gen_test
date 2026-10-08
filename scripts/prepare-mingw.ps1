@@ -1,0 +1,71 @@
+$ErrorActionPreference = 'Stop'
+
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$toolsRoot = Join-Path $repoRoot '.tools'
+$toolchainRoot = Join-Path $toolsRoot 'mingw64'
+$compilerPath = Join-Path $toolchainRoot 'bin\g++.exe'
+
+if (Test-Path -LiteralPath $compilerPath -PathType Leaf) {
+    Write-Output "MinGW-w64 is ready: $compilerPath"
+    exit 0
+}
+
+$downloadUrl = 'https://github.com/brechtsanders/winlibs_mingw/releases/download/16.2.0posix-14.0.0-ucrt-r2/winlibs-x86_64-posix-seh-gcc-16.2.0-mingw-w64ucrt-14.0.0-r2.zip'
+$expectedSha256 = 'd5dbafc4a170e762ca6143151ec918fb9e2c72736fb14cd704abebc6bdd5276a'
+$id = [Guid]::NewGuid().ToString('N')
+$archivePath = Join-Path $toolsRoot "mingw-$id.zip"
+$stagingRoot = Join-Path $toolsRoot "mingw-stage-$id"
+
+New-Item -ItemType Directory -Path $toolsRoot -Force | Out-Null
+
+try {
+    Write-Output 'Downloading the bundled MinGW-w64 compiler (about 274 MB)...'
+    $curl = Get-Command 'curl.exe' -ErrorAction SilentlyContinue
+    if ($curl) {
+        & $curl.Source --fail --location --retry 3 --retry-delay 2 --output $archivePath $downloadUrl
+        if ($LASTEXITCODE -ne 0) {
+            throw "MinGW-w64 download failed with curl exit code $LASTEXITCODE."
+        }
+    }
+    else {
+        Invoke-WebRequest -Uri $downloadUrl -OutFile $archivePath
+    }
+
+    $actualSha256 = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actualSha256 -ne $expectedSha256) {
+        throw "MinGW-w64 download checksum mismatch. Expected $expectedSha256, received $actualSha256."
+    }
+
+    Write-Output 'Download verified. Extracting MinGW-w64...'
+    New-Item -ItemType Directory -Path $stagingRoot -Force | Out-Null
+    Expand-Archive -LiteralPath $archivePath -DestinationPath $stagingRoot -Force
+
+    $stagedToolchain = Join-Path $stagingRoot 'mingw64'
+    $stagedCompiler = Join-Path $stagedToolchain 'bin\g++.exe'
+    if (-not (Test-Path -LiteralPath $stagedCompiler -PathType Leaf)) {
+        throw 'The MinGW-w64 archive did not contain mingw64\bin\g++.exe.'
+    }
+
+    if (Test-Path -LiteralPath $toolchainRoot) {
+        $stalePath = Join-Path $toolsRoot "mingw-incomplete-$id"
+        Move-Item -LiteralPath $toolchainRoot -Destination $stalePath
+    }
+    Move-Item -LiteralPath $stagedToolchain -Destination $toolchainRoot
+
+    if (-not (Test-Path -LiteralPath $compilerPath -PathType Leaf)) {
+        throw 'MinGW-w64 extraction completed, but g++.exe is missing.'
+    }
+    Write-Output "MinGW-w64 is ready: $compilerPath"
+}
+finally {
+    $toolsPrefix = [IO.Path]::GetFullPath($toolsRoot).TrimEnd('\') + '\'
+    foreach ($temporaryPath in @($archivePath, $stagingRoot)) {
+        if (Test-Path -LiteralPath $temporaryPath) {
+            $resolvedTemporaryPath = [IO.Path]::GetFullPath($temporaryPath)
+            if (-not $resolvedTemporaryPath.StartsWith($toolsPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+                throw "Refusing to clean a temporary path outside .tools: $resolvedTemporaryPath"
+            }
+            Remove-Item -LiteralPath $resolvedTemporaryPath -Recurse -Force
+        }
+    }
+}

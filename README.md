@@ -19,7 +19,7 @@ npm run build
 npm run dist:win
 ```
 
-`npm run dist:win` tạo gói ZIP Windows x64 trong `release/`; giải nén và chạy `CP Test Studio.exe`. Có thể tạo installer NSIS trên Windows bằng `npm run dist:win:installer`.
+`npm run dist:win` tạo gói ZIP Windows x64 trong `release/`; giải nén và chạy `CP Test Studio.exe`. Có thể tạo installer NSIS trên Windows bằng `npm run dist:win:installer`. Gói Windows tự chuẩn bị và chứa MinGW-w64, nên người dùng chỉ cần cài ứng dụng để biên dịch C++.
 
 Hướng dẫn chi tiết ở [docs/SETUP.md](docs/SETUP.md), thao tác ở [docs/USER_GUIDE.md](docs/USER_GUIDE.md), checklist thủ công ở [docs/MANUAL_TEST.md](docs/MANUAL_TEST.md).
 
@@ -47,3 +47,7 @@ Hướng dẫn chi tiết ở [docs/SETUP.md](docs/SETUP.md), thao tác ở [doc
 - Tác vụ AI phụ thuộc API/key và mô hình/provider bạn cấu hình; AI có thể tạo nội dung sai cần người dùng xem lại.
 - PDF MVP trình bày nội dung đề dạng văn bản Unicode; chưa chuyển toàn bộ cú pháp Markdown/LaTeX thành dàn trang nâng cao.
 - Không chạy functional/end-to-end test trong phạm vi bàn giao. Xem [BUILD_REPORT.md](BUILD_REPORT.md) để biết các lệnh build đã chạy.
+
+
+Set-Location "C:\Users\Kiet Gay\Desktop\cp_gen_test"
+& "C:\Users\Kiet Gay\AppData\Local\Programs\nodejs-24.21.0\npm.cmd" run dev

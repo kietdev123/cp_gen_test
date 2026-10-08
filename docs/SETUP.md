@@ -11,7 +11,7 @@
 
 - Windows 10/11 64-bit.
 - Node.js 22 trở lên và npm.
-- MinGW-w64 có `g++.exe` cho chức năng compile/run C++17.
+- MinGW-w64 được chuẩn bị tự động khi chạy source và được đóng gói cùng app Windows; người cài app không cần cài riêng compiler.
 - Pandoc là tùy chọn, chỉ cần để xuất DOCX.
 - API key OpenAI hoặc Google Gemini là tùy chọn, chỉ cần cho chức năng AI.
 
@@ -35,13 +35,11 @@ npm run dist:win
 
 Tệp build nằm trong `release/`. Dùng `npm run dist:win:installer` trên Windows nếu cần installer NSIS.
 
-## Cài MinGW-w64 / chọn compiler
+## Compiler C++
 
-Ứng dụng tự tìm `g++.exe` trong `PATH`. Nếu không nhận ra compiler:
+App Windows đi kèm MinGW-w64. Khi chạy từ source, `npm run dev` tự tải bản compiler cố định vào `.tools/` (thư mục này không được đưa vào Git) và xác minh SHA-256 trước khi giải nén. Lệnh tạo gói Windows cũng chuẩn bị compiler tự động.
 
-1. Cài MinGW-w64 có `g++.exe`.
-2. Thêm thư mục `bin` vào biến môi trường `PATH`, hoặc mở **Cài đặt → Compiler C++ → Chọn g++.exe**.
-3. Khởi động lại ứng dụng nếu chỉ vừa sửa `PATH`.
+Nếu compiler đi kèm không khởi động được, có thể chọn một `g++.exe` khác trong **Cài đặt → Compiler C++**. App chỉ thêm thư mục compiler vào `PATH` của tiến trình biên dịch/chạy, không sửa PATH của Windows.
 
 Compiler cần hỗ trợ `-std=c++17`. Project compile vào thư mục build của ứng dụng; source gốc vẫn nằm trong thư mục dự án.
 

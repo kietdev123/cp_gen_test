@@ -7,10 +7,12 @@
   "license": "MIT",
   "scripts": {
     "dev": "electron-vite dev",
+    "predev": "npm run prepare:mingw",
+    "prepare:mingw": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-mingw.ps1",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.main.json && tsc --noEmit -p tsconfig.preload.json",
     "build": "electron-vite build",
-    "dist:win": "electron-builder --win zip --x64",
-    "dist:win:installer": "electron-builder --win nsis --x64"
+    "dist:win": "npm run prepare:mingw && electron-builder --win zip --x64",
+    "dist:win:installer": "npm run prepare:mingw && electron-builder --win nsis --x64"
   },
   "dependencies": {
     "@fontsource/roboto": "^5.3.0",
@@ -48,6 +50,13 @@
     "files": [
       "out/**/*",
       "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": ".tools/mingw64",
+        "to": "toolchain/mingw64",
+        "filter": ["**/*"]
+      }
     ],
     "win": {
       "target": [

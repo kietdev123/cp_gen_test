@@ -42,6 +42,24 @@ const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
 const keysFile = () => path.join(app.getPath('userData'), 'secure-keys.json');
 const projectsRoot = () => path.join(app.getPath('userData'), 'projects');
 const buildRoot = () => path.join(app.getPath('userData'), 'build');
+let activeCompilerPath = '';
+
+function bundledCompilerBin(): string | undefined {
+  if (process.platform !== 'win32') return undefined;
+  const base = app.isPackaged
+    ? path.join(process.resourcesPath, 'toolchain', 'mingw64')
+    : path.join(app.getAppPath(), '.tools', 'mingw64');
+  const bin = path.join(base, 'bin');
+  return existsSync(path.join(bin, 'g++.exe')) ? bin : undefined;
+}
+
+function childEnvironment(): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  const pathKey = Object.keys(env).find((key) => key.toLowerCase() === 'path') ?? 'PATH';
+  const extraDirs = [activeCompilerPath ? path.dirname(activeCompilerPath) : '', bundledCompilerBin() ?? ''];
+  env[pathKey] = [...new Set([...extraDirs, env[pathKey] ?? ''].filter(Boolean))].join(path.delimiter);
+  return env;
+}
 const safeId = (value: string) => /^[a-f0-9-]{8,64}$/i.test(value);
 const projectPath = (id: string) => {
   if (!safeId(id)) throw new Error('Mã dự án không hợp lệ.');
@@ -66,13 +84,13 @@ async function readProject(id: string): Promise<Project> {
   return { ...project, images: project.images ?? [], tests: project.tests ?? [] };
 }
 
-function runChild(command: string, args: string[], options: { cwd?: string; input?: string; timeoutMs?: number; outputLimit?: number } = {}): Promise<RunResult> {
+function runChild(command: string, args: string[], options: { cwd?: string; input?: string; timeoutMs?: number; outputLimit?: number; env?: NodeJS.ProcessEnv } = {}): Promise<RunResult> {
   return new Promise((resolve, reject) => {
     const start = Date.now();
     let stdout = '', stderr = '', timedOut = false, outputLimited = false;
     const limit = options.outputLimit ?? 2 * 1024 * 1024;
     let child: ChildProcessWithoutNullStreams;
-    try { child = spawn(command, args, { cwd: options.cwd, windowsHide: true, shell: false, stdio: ['pipe', 'pipe', 'pipe'] }); }
+    try { child = spawn(command, args, { cwd: options.cwd, env: options.env ?? childEnvironment(), windowsHide: true, shell: false, stdio: ['pipe', 'pipe', 'pipe'] }); }
     catch (error) { reject(error); return; }
     const collect = (target: 'stdout' | 'stderr', chunk: Buffer) => {
       const left = limit - Buffer.byteLength(target === 'stdout' ? stdout : stderr, 'utf8');
@@ -98,15 +116,16 @@ function runChild(command: string, args: string[], options: { cwd?: string; inpu
 
 async function compiler(): Promise<string> {
   const settings = await readSettings();
-  const candidates = [settings.compilerPath, ...((process.env.PATH ?? '').split(path.delimiter).map((part) => path.join(part, process.platform === 'win32' ? 'g++.exe' : 'g++')))];
+  const bundledBin = bundledCompilerBin();
+  const candidates = [settings.compilerPath, bundledBin ? path.join(bundledBin, 'g++.exe') : '', ...((process.env.PATH ?? '').split(path.delimiter).map((part) => path.join(part, process.platform === 'win32' ? 'g++.exe' : 'g++')))];
   for (const candidate of candidates) {
     if (!candidate) continue;
     if (existsSync(candidate)) {
       const result = await runChild(candidate, ['--version'], { timeoutMs: 4000, outputLimit: 16_000 }).catch(() => null);
-      if (result?.exitCode === 0) return candidate;
+      if (result?.exitCode === 0) { activeCompilerPath = candidate; return candidate; }
     }
   }
-  throw new Error('Chưa tìm thấy g++. Hãy cài MinGW-w64 hoặc chọn g++.exe trong Cài đặt.');
+  throw new Error('Không tìm thấy g++. Hãy cài lại ứng dụng hoặc chọn g++.exe trong Cài đặt.');
 }
 
 async function compile(projectId: string, kind: ProgramKind, source: string): Promise<CompileResult> {
