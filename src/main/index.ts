@@ -736,6 +736,7 @@ function safeThemisFilename(raw: string, extension: 'INP' | 'OUT', fallback: str
 async function createThemisArchive(filePath: string, tests: TestCase[], settings: Settings) {
   const inputFile = safeThemisFilename(settings.themisInputFile, 'INP', 'BAI');
   const outputFile = safeThemisFilename(settings.themisOutputFile, 'OUT', 'BAI');
+  const rootFolder = inputFile.replace(/\.INP$/i, '');
   const prefix = 'TEST';
   await new Promise<void>((resolve, reject) => {
     const output = createWriteStream(filePath);
@@ -745,7 +746,7 @@ async function createThemisArchive(filePath: string, tests: TestCase[], settings
     archive.once('error', reject);
     archive.pipe(output);
     tests.forEach((test, index) => {
-      const folder = `BAI/${prefix}${String(index + 1).padStart(2, '0')}`;
+      const folder = `${rootFolder}/${prefix}${String(index + 1).padStart(2, '0')}`;
       archive.append(test.input, { name: `${folder}/${inputFile}` });
       archive.append(test.output, { name: `${folder}/${outputFile}` });
     });

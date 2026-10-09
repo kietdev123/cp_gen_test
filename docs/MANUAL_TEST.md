@@ -32,7 +32,7 @@ Checklist này dành cho người dùng kiểm tra ứng dụng sau khi build. K
 - [ ] Sửa lời giải: output cũ được giữ nhưng đánh dấu cũ; chạy lại input có sẵn không sinh lại testcase.
 - [ ] Thêm oracle độc lập: output khớp theo token thành `VERIFIED`; mismatch hoặc oracle lỗi không được đánh dấu xác minh.
 - [ ] Mục export hiển thị input/output có thể xuất và số bản ghi lỗi, trùng, thiếu output hoặc cũ bị bỏ qua.
-- [ ] Xác nhận ZIP Themis có cấu trúc `BAI/TESTxx/BAI.INP` và `BAI.OUT`; tiền tố luôn là `TEST`, còn tên input/output lấy từ bước 1.
+- [ ] Xác nhận ZIP Themis dùng tên gốc theo file Input (ví dụ `CHANLE/TEST01/CHANLE.INP`) và file Output lấy theo tên đã đặt ở bước 1; tiền tố luôn là `TEST`.
 - [ ] Xuất Markdown, DOCX, PDF, `<tên đề>_solution.cpp` và ZIP; kiểm tra Unicode, công thức và bố cục.
 
 ## 4. Lỗi thường gặp
