@@ -58,6 +58,13 @@ export const AiQuickResultSchema = z.object({
   generator: z.string().min(1).max(100_000),
 }).strict();
 
+export const AiStatementDraftSchema = z.object({
+  statement: z.string().min(1).max(100_000),
+  themisInputFile: z.string().trim().min(1).max(128),
+  themisOutputFile: z.string().trim().min(1).max(128),
+  themisTestPrefix: z.string().trim().min(1).max(24).regex(/^[A-Za-z0-9_-]+$/),
+}).strict();
+
 const TestCaseSchema = z.object({
   id: z.string(), name: z.string(), input: z.string(), output: z.string(),
   status: z.enum(['pending', 'running', 'generated', 'verified', 'duplicate', 'failed', 'timeout', 'invalid', 'error', 'passed']),
