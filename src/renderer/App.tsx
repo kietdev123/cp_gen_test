@@ -8,9 +8,9 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import {
-  Activity, ArrowDownToLine, ArrowLeft, ArrowRight, BadgeCheck, BookOpen, Braces, Check,
+  Activity, ArrowDownToLine, ArrowLeft, ArrowRight, BookOpen, Braces, Check,
   ChevronDown, CircleHelp, Code2, Command, Download, FileCode2, FileImage, FileText, Folder,
-  FolderOpen, Gauge, Github, HardDrive, KeyRound, LayoutDashboard, ListChecks, LoaderCircle,
+  FolderOpen, Github, HardDrive, KeyRound, ListChecks, LoaderCircle,
   Moon, MoreHorizontal, Play, Plus, RefreshCw, Rocket, Save, Settings as SettingsIcon, Shield, Sparkles,
   Sun, Trash2, TriangleAlert, X,
 } from 'lucide-react';
@@ -23,9 +23,8 @@ import { useApp, type Page } from './stores/app';
 Object.assign(self, { MonacoEnvironment: { getWorker: () => new editorWorker() } });
 loader.config({ monaco });
 
-const nav: { id: Page; label: string; icon: typeof LayoutDashboard; section?: string }[] = [
-  { id: 'dashboard', label: 'Tổng quan', icon: LayoutDashboard, section: 'KHÔNG GIAN' },
-  { id: 'projects', label: 'Dự án', icon: FolderOpen },
+const nav: { id: Page; label: string; icon: typeof FolderOpen; section?: string }[] = [
+  { id: 'projects', label: 'Dự án', icon: FolderOpen, section: 'KHÔNG GIAN' },
   { id: 'problem', label: 'Soạn đề', icon: BookOpen, section: 'SOẠN THẢO' },
   { id: 'settings', label: 'Cài đặt', icon: SettingsIcon, section: 'ỨNG DỤNG' },
 ];
@@ -77,7 +76,6 @@ function buildTestPlanFromAi(value: ReturnType<typeof AiTestPlanSchema.parse>, s
 }
 
 const pageInfo: Record<Page, { title: string; subtitle: string }> = {
-  dashboard: { title: 'Tổng quan', subtitle: 'Không gian làm việc soạn đề và chuẩn bị bộ test.' },
   projects: { title: 'Dự án của bạn', subtitle: 'Tất cả đề bài và bộ test được lưu ngay trên máy.' },
   problem: { title: 'Biên soạn đề', subtitle: 'Viết đề bằng Markdown, xem trước định dạng và công thức.' },
   'test-plan': { title: 'Test Plan', subtitle: 'Chia testcase thành nhóm, chọn mode và tham số; có thể chỉnh sửa mà không cần AI.' },
@@ -537,7 +535,6 @@ function App() {
 
   const analyzeFileImage = () => fileInput.current?.click();
   const pageContent = () => {
-    if (page === 'dashboard') return <Dashboard projects={projects} compilerAvailable={compilerAvailable} compilerName={compilerName} openProject={openProject} newProject={() => setProjectModal(true)} setPage={setPage} />;
     if (page === 'projects') return <Projects projects={projects} openProject={openProject} create={() => setProjectModal(true)} remove={removeProject} />;
     if (page === 'problem') return active ? <Problem project={active} update={updateActive} sourceMode={sourceMode} setSourceMode={setSourceMode} ideaPrompt={ideaPrompt} setIdeaPrompt={setIdeaPrompt} ideaPromptRef={ideaPromptRef} onDraftFromIdea={draftStatementFromIdea} onPickImage={analyzeFileImage} onExtract={extractImage} photoName={photo?.name ?? active.images.at(-1)?.name} aiBusy={Boolean(busy && busy.startsWith('Đang'))} /> : <EmptyProject create={() => setProjectModal(true)} />;
     if (page === 'test-plan') return active ? <TestPlanEditor project={active} update={updateActive} analyze={analyzeTestPlan} quickCreate={quickCreateWithAi} busy={busy} /> : <EmptyProject create={() => setProjectModal(true)} />;
@@ -616,7 +613,7 @@ function App() {
     }
     if (page === 'export') {
       if (exportedProjectId !== active.id) { await exportAllFiles(); return; }
-      setPage('dashboard');
+      setPage('projects');
       return;
     }
     const next = workflowSteps[workflowIndex + 1];
@@ -710,20 +707,8 @@ function LoadingOverlay({ busy, generationProgress, runProgress }: { busy: strin
   </div>;
 }
 
-function Dashboard({ projects, compilerAvailable, compilerName, openProject, newProject, setPage }: { projects: Project[]; compilerAvailable: boolean; compilerName: string; openProject: (p: Project) => void; newProject: () => void; setPage: (p: Page) => void }) {
-  const recent = projects.slice(0, 4);
-  return <div className="dashboard-grid">
-    <section className="welcome-card"><div className="welcome-copy"><div className="eyebrow light-eyebrow"><Sparkles size={13} /> WORKSPACE OFFLINE</div><h2>Mỗi bộ test tốt<br />bắt đầu từ <em>ý tưởng rõ ràng.</em></h2><p>Viết đề, tạo generator C++ và đóng gói testcase Themis trong một không gian riêng tư trên máy của bạn.</p><button className="button button-white" onClick={newProject}><Plus size={17} /> Tạo dự án đầu tiên</button></div><div className="welcome-art"><div className="art-ring ring-one" /><div className="art-ring ring-two" /><div className="art-card"><div className="art-card-head"><span /><span /><span /></div><div className="art-line l1" /><div className="art-line l2" /><div className="art-code"><i>01</i> <b>int</b> main() {'{'}</div><div className="art-code"><i>02</i> &nbsp;cout &lt;&lt; <strong>test</strong>;</div><div className="art-code"><i>03</i> {'}'}</div><div className="art-check"><BadgeCheck size={18} /> TESTS READY</div></div><div className="art-spark">✳</div></div></section>
-    <div className="stats-row"><Stat icon={Folder} label="Dự án" value={String(projects.length).padStart(2, '0')} detail="Lưu trên máy" /><Stat icon={ListChecks} label="Testcase" value={String(projects.reduce((sum, project) => sum + project.tests.length, 0)).padStart(2, '0')} detail="Trong các dự án" /><Stat icon={Gauge} label="Compiler C++" value={compilerAvailable ? 'Sẵn sàng' : 'Chưa cài'} detail={compilerAvailable ? compilerName.split(/[\\/]/).pop() ?? 'g++' : 'Cần kiểm tra compiler'} status={compilerAvailable} /></div>
-    <section className="panel recent-panel"><div className="section-heading"><div><h3>Dự án gần đây</h3><p>Tiếp tục nơi bạn vừa làm việc.</p></div><button className="link-button" onClick={() => setPage('projects')}>Xem tất cả <ArrowRight size={14} /></button></div>{recent.length ? <div className="recent-list">{recent.map((project, index) => <ProjectRow key={project.id} project={project} index={index} open={() => openProject(project)} compact />)}</div> : <div className="empty-inline"><div className="empty-icon"><FileCode2 size={20} /></div><div><b>Chưa có dự án nào</b><span>Tạo dự án đầu tiên để bắt đầu soạn đề.</span></div><button className="button button-primary button-small" onClick={newProject}><Plus size={15} /> Tạo mới</button></div>}</section>
-    <aside className="quick-panel panel"><div className="quick-head"><div className="quick-icon"><Activity size={17} /></div><div><h3>Bắt đầu nhanh</h3><p>Quy trình cơ bản</p></div></div><div className="quick-step"><span>01</span><div><b>Soạn đề bài</b><small>Markdown và công thức LaTeX</small></div><ArrowRight size={15} onClick={() => setPage('problem')} /></div><div className="quick-step"><span>02</span><div><b>Viết generator</b><small>Tạo input với C++17</small></div><ArrowRight size={15} onClick={() => setPage('generator')} /></div><div className="quick-step"><span>03</span><div><b>Kiểm tra & xuất</b><small>Chạy lời giải, đóng gói Themis</small></div><ArrowRight size={15} onClick={() => setPage('runner')} /></div><button className="quick-help" onClick={() => setPage('settings')}><CircleHelp size={14} /> Hướng dẫn cấu hình môi trường <ArrowRight size={13} /></button></aside>
-  </div>;
-}
-
-function Stat({ icon: Icon, label, value, detail, status }: { icon: typeof Folder; label: string; value: string; detail: string; status?: boolean }) { return <div className="stat-card"><div className={`stat-icon ${status === false ? 'stat-warn' : ''}`}><Icon size={17} /></div><div className="stat-label">{label}</div><strong className={status === false ? 'text-warn' : ''}>{value}</strong><small>{detail}</small></div>; }
-
-function ProjectRow({ project, index, open, compact = false, remove }: { project: Project; index: number; open: () => void; compact?: boolean; remove?: () => void }) {
-  return <div className={`project-row ${compact ? 'compact' : ''}`}><button className={`project-monogram color-${index % 4}`} onClick={open}>{project.name.trim().charAt(0).toUpperCase() || 'P'}</button><button className="project-main" onClick={open}><b>{project.name}</b><small>Cập nhật {new Date(project.updatedAt).toLocaleDateString('vi-VN')} · {project.tests.length} testcase</small></button><span className="project-tag"><FileText size={12} /> {project.tests.length ? 'Đang làm' : 'Bản nháp'}</span><button className="icon-button row-arrow" onClick={open} title="Mở dự án"><ArrowRight size={16} /></button>{remove && <button className="icon-button danger-icon" onClick={remove} title="Xóa dự án"><Trash2 size={15} /></button>}</div>;
+function ProjectRow({ project, index, open, remove }: { project: Project; index: number; open: () => void; remove?: () => void }) {
+  return <div className="project-row"><button className={`project-monogram color-${index % 4}`} onClick={open}>{project.name.trim().charAt(0).toUpperCase() || 'P'}</button><button className="project-main" onClick={open}><b>{project.name}</b><small>Cập nhật {new Date(project.updatedAt).toLocaleDateString('vi-VN')} · {project.tests.length} testcase</small></button><span className="project-tag"><FileText size={12} /> {project.tests.length ? 'Đang làm' : 'Bản nháp'}</span><button className="icon-button row-arrow" onClick={open} title="Mở dự án"><ArrowRight size={16} /></button>{remove && <button className="icon-button danger-icon" onClick={remove} title="Xóa dự án"><Trash2 size={15} /></button>}</div>;
 }
 
 function Projects({ projects, openProject, create, remove }: { projects: Project[]; openProject: (p: Project) => void; create: () => void; remove: (p: Project) => void }) {

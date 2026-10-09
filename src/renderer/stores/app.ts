@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { Project, Settings } from '../../shared/types';
 
-export type Page = 'dashboard' | 'projects' | 'problem' | 'test-plan' | 'generator' | 'solution' | 'runner' | 'export' | 'settings';
+export type Page = 'projects' | 'problem' | 'test-plan' | 'generator' | 'solution' | 'runner' | 'export' | 'settings';
 interface AppState {
   projects: Project[];
   active: Project | null;
@@ -17,7 +17,7 @@ interface AppState {
 }
 
 export const useApp = create<AppState>((set) => ({
-  projects: [], active: null, settings: null, page: 'dashboard', dirty: false,
+  projects: [], active: null, settings: null, page: 'projects', dirty: false,
   setProjects: (projects) => set({ projects }),
   setActive: (active) => set({ active, dirty: false }),
   setSettings: (settings) => set({ settings }),
