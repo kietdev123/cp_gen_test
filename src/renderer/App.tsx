@@ -8,10 +8,10 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import {
-  Activity, ArrowDownToLine, ArrowLeft, ArrowRight, BookOpen, Braces, Check,
+  Activity, ArrowDownToLine, ArrowLeft, ArrowRight, BadgeCheck, BookOpen, Braces, Check,
   ChevronDown, CircleHelp, Code2, Command, Download, FileCode2, FileImage, FileText, Folder,
   FolderOpen, Github, HardDrive, KeyRound, ListChecks, LoaderCircle,
-  Moon, MoreHorizontal, Play, Plus, RefreshCw, Rocket, Save, Settings as SettingsIcon, Shield, Sparkles,
+  Moon, Play, Plus, RefreshCw, Rocket, Save, Settings as SettingsIcon, Shield, Sparkles,
   Sun, Trash2, TriangleAlert, X,
 } from 'lucide-react';
 import type { AiRequest, AiUsage, GeneratorMode, Project, ProgramKind, Provider, Settings, TestCase, TestGenerationProgress, TestGroup, TestPlan, TestRunProgress } from '../shared/types';
@@ -632,10 +632,6 @@ function App() {
           <button className={`nav-item ${(item.id === 'problem' ? isWorkflowPage(page) : page === item.id) ? 'active' : ''}`} onClick={() => setPage(item.id)}><item.icon size={18} strokeWidth={(item.id === 'problem' ? isWorkflowPage(page) : page === item.id) ? 2.3 : 1.8} /><span>{item.label}</span>{item.id === 'problem' && active?.tests.length ? <span className="nav-count">{active.tests.length}</span> : null}</button>
         </div>)}
       </nav>
-      <div className="sidebar-bottom">
-        <div className={`compiler-chip ${compilerAvailable ? 'okay' : 'warn'}`}><span className="dot" /><span>{compilerAvailable ? 'Compiler sẵn sàng' : 'Chưa có compiler'}</span><button title="Mở cài đặt" onClick={() => setPage('settings')}><SettingsIcon size={14} /></button></div>
-        <button className="user-row" onClick={() => setPage('settings')}><div className="avatar">CP</div><div><b>Cài đặt ứng dụng</b><small>Lưu cục bộ trên máy</small></div><MoreHorizontal size={18} /></button>
-      </div>
     </aside>
 
     <main className="main-area">
