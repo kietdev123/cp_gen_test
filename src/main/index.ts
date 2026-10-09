@@ -16,7 +16,7 @@ const DEFAULT_SETTINGS: Settings = {
   onboardingComplete: false,
   provider: 'openai',
   models: { openai: 'gpt-4.1-mini', gemini: 'gemini-2.5-flash' },
-  compilerPath: '', theme: 'light', themisInputFile: 'BAI.INP', themisOutputFile: 'BAI.OUT', themisTestPrefix: 'TEST',
+  compilerPath: '', theme: 'light', themisInputFile: 'BAI.INP', themisOutputFile: 'BAI.OUT',
 };
 const DEFAULT_GENERATOR = DEFAULT_GENERATOR_TEMPLATE;
 const DEFAULT_SOLUTION = `#include <bits/stdc++.h>
@@ -94,7 +94,9 @@ const projectFile = (id: string) => path.join(projectPath(id), 'project.json');
 
 async function readSettings(): Promise<Settings> {
   try {
-    const saved = JSON.parse(await fs.readFile(settingsFile(), 'utf8')) as Partial<Settings>;
+    const savedSettings = JSON.parse(await fs.readFile(settingsFile(), 'utf8')) as Record<string, unknown>;
+    delete savedSettings.themisTestPrefix;
+    const saved = savedSettings as Partial<Settings>;
     return { ...DEFAULT_SETTINGS, ...saved, models: { ...DEFAULT_SETTINGS.models, ...saved.models } };
   }
   catch { return { ...DEFAULT_SETTINGS, models: { ...DEFAULT_SETTINGS.models } }; }
@@ -731,14 +733,10 @@ function safeThemisFilename(raw: string, extension: 'INP' | 'OUT', fallback: str
   return `${safeFileName(withoutExtension || fallback)}.${extension}`;
 }
 
-function safeThemisPrefix(raw: string): string {
-  return String(raw ?? '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 24) || 'TEST';
-}
-
 async function createThemisArchive(filePath: string, tests: TestCase[], settings: Settings) {
   const inputFile = safeThemisFilename(settings.themisInputFile, 'INP', 'BAI');
   const outputFile = safeThemisFilename(settings.themisOutputFile, 'OUT', 'BAI');
-  const prefix = safeThemisPrefix(settings.themisTestPrefix);
+  const prefix = 'TEST';
   await new Promise<void>((resolve, reject) => {
     const output = createWriteStream(filePath);
     const archive = archiver('zip', { zlib: { level: 9 } });

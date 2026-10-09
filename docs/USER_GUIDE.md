@@ -12,7 +12,7 @@ CP Test Studio giúp soạn đề, tạo testcase bằng generator C++17, kiểm
 
 - Soạn đề trực tiếp bằng Markdown, hoặc nhập ý tưởng và chọn **Soạn đề bằng AI**.
 - Có thể chọn ảnh đề rồi bấm **Đọc ảnh bằng AI** để trích nội dung.
-- Khi AI tạo đề từ ý tưởng hoặc ảnh, AI cũng đề xuất tên file Input, Output và tiền tố TEST. Các giá trị hiện trong **Tên file Themis** để bạn kiểm tra, sửa lại nếu cần.
+- Khi AI tạo đề từ ý tưởng hoặc ảnh, AI đề xuất tên file Input và Output. Tiền tố testcase khi xuất Themis luôn là `TEST` (ví dụ `TEST01`).
 
 ## 2. Test Plan
 

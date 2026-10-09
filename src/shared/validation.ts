@@ -62,7 +62,6 @@ export const AiStatementDraftSchema = z.object({
   statement: z.string().min(1).max(100_000),
   themisInputFile: z.string().trim().min(1).max(128),
   themisOutputFile: z.string().trim().min(1).max(128),
-  themisTestPrefix: z.string().trim().min(1).max(24).regex(/^[A-Za-z0-9_-]+$/),
 }).strict();
 
 const TestCaseSchema = z.object({

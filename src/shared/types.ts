@@ -138,7 +138,6 @@ export interface Settings {
   theme: 'light' | 'dark';
   themisInputFile: string;
   themisOutputFile: string;
-  themisTestPrefix: string;
 }
 
 export interface AiRequest {

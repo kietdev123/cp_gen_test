@@ -17,7 +17,7 @@ Khi mở Test Plan chưa có đặc tả hoặc đã lệch đề, Generator ch�
 - Mỗi testcase giữ nhóm, mode, seed, index, params, SHA-256 và phiên bản đề/generator/solution. Thay đổi mã hoặc đề đánh dấu dữ liệu cũ thay vì xóa.
 - `GENERATED` nghĩa là có input/output mới nhưng chưa xác minh độc lập. `VERIFIED` nghĩa là output khớp oracle sau chuẩn hóa khoảng trắng. `DUPLICATE`, `INVALID`, `ERROR`, `TIMEOUT` và `FAILED` không được xuất.
 - Runner lưu output cũ nếu lần chạy mới thất bại, đồng thời đánh dấu stale khi cần chạy lại.
-- Themis export dùng tên file và prefix trong Cài đặt; dialog xác nhận cho biết số test chưa xác minh hoặc bị loại.
+- Themis export dùng tên file Input/Output ở bước 1; thư mục testcase luôn có tiền tố `TEST` (ví dụ `TEST01`). Dialog xác nhận cho biết số test chưa xác minh hoặc bị loại.
 
 ## Giới hạn hiện tại
 

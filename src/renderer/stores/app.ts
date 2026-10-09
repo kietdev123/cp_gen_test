@@ -9,6 +9,7 @@ interface AppState {
   page: Page;
   dirty: boolean;
   setProjects: (projects: Project[]) => void;
+  upsertProject: (project: Project) => void;
   setActive: (project: Project | null) => void;
   setSettings: (settings: Settings) => void;
   setPage: (page: Page) => void;
@@ -19,6 +20,10 @@ interface AppState {
 export const useApp = create<AppState>((set) => ({
   projects: [], active: null, settings: null, page: 'projects', dirty: false,
   setProjects: (projects) => set({ projects }),
+  upsertProject: (project) => set((state) => ({
+    projects: [project, ...state.projects.filter((item) => item.id !== project.id)]
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
+  })),
   setActive: (active) => set({ active, dirty: false }),
   setSettings: (settings) => set({ settings }),
   setPage: (page) => set({ page }),

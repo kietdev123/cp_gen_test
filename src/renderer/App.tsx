@@ -90,7 +90,7 @@ const pageInfo: Record<Page, { title: string; subtitle: string }> = {
 };
 
 function App() {
-  const { projects, active, settings, page, dirty, setProjects, setActive, setSettings, setPage, setDirty, updateActive } = useApp();
+  const { projects, active, settings, page, dirty, setProjects, upsertProject, setActive, setSettings, setPage, setDirty, updateActive } = useApp();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => window.localStorage.getItem('sidebar-collapsed') === 'true');
   const [onboarding, setOnboarding] = useState(false);
   const [aiKey, setAiKey] = useState('');
@@ -138,11 +138,11 @@ function App() {
     if (!dirty || !active) return;
     const timer = window.setTimeout(() => {
       void window.studio.saveProject(active).then((saved) => {
-        setActive(saved); setDirty(false);
+        upsertProject(saved); setActive(saved); setDirty(false);
       }).catch((error: Error) => notify(`Không lưu được: ${error.message}`, 'error'));
     }, 900);
     return () => window.clearTimeout(timer);
-  }, [active, dirty, notify, setActive, setDirty]);
+  }, [active, dirty, notify, setActive, setDirty, upsertProject]);
 
   useEffect(() => { document.documentElement.dataset.theme = settings?.theme ?? 'light'; }, [settings?.theme]);
 
@@ -158,7 +158,7 @@ function App() {
     if (!active) return false;
     try {
       const saved = await window.studio.saveProject(active);
-      setActive(saved); setDirty(false);
+      upsertProject(saved); setActive(saved); setDirty(false);
       return true;
     } catch (error) { notify(`Không lưu được: ${(error as Error).message}`, 'error'); return false; }
   };
@@ -175,7 +175,17 @@ function App() {
     } catch (error) { notify((error as Error).message, 'error'); }
   };
 
-  const openProject = (project: Project) => { autoTestPlanKey.current = ''; autoCodeKey.current = ''; setActive(project); setPage('problem'); setSourceMode(project.images.length ? 'image' : 'text'); setIdeaPrompt(''); setPhoto(null); setStepAiChoices({ generator: 'unasked', solution: 'unasked' }); setSolutionCheckKey(''); setExportDirectory(''); setExportedProjectId(''); };
+  const openProject = async (project: Project) => {
+    if (active && dirty && !(await persistActiveProject())) return;
+    try {
+      const latestProjects = await window.studio.listProjects();
+      const latestProject = latestProjects.find((item) => item.id === project.id);
+      if (!latestProject) throw new Error('Không tìm thấy bài thi đã lưu.');
+      setProjects(latestProjects);
+      autoTestPlanKey.current = ''; autoCodeKey.current = '';
+      setActive(latestProject); setPage('problem'); setSourceMode(latestProject.images.length ? 'image' : 'text'); setIdeaPrompt(''); setPhoto(null); setStepAiChoices({ generator: 'unasked', solution: 'unasked' }); setSolutionCheckKey(''); setExportDirectory(''); setExportedProjectId('');
+    } catch (error) { notify(`Không mở được bài thi: ${(error as Error).message}`, 'error'); }
+  };
 
   const removeProject = async (project: Project) => {
     if (!window.confirm(`Xóa bài thi “${project.name}” và các tệp liên quan?`)) return;
@@ -371,7 +381,7 @@ function App() {
       try {
         const draft = AiStatementDraftSchema.parse(parseJsonResponse(answer));
         updateActive({ statement: draft.statement, tests: active.tests.map((test) => ({ ...test, inputStale: true, outputStale: Boolean(test.output) || test.outputStale })) });
-        if (settings) await updateSettings({ ...settings, themisInputFile: draft.themisInputFile, themisOutputFile: draft.themisOutputFile, themisTestPrefix: draft.themisTestPrefix });
+        if (settings) await updateSettings({ ...settings, themisInputFile: draft.themisInputFile, themisOutputFile: draft.themisOutputFile });
         notify('Đã đưa nội dung đề và tên file Themis do AI đề xuất vào bước 1.');
       } catch (error) { notify(`AI trả về dữ liệu đề hoặc tên file Themis không hợp lệ: ${(error as Error).message}`, 'error'); }
     }
@@ -386,7 +396,7 @@ function App() {
       try {
         const draft = AiStatementDraftSchema.parse(parseJsonResponse(answer));
         updateActive({ statement: draft.statement, tests: active.tests.map((test) => ({ ...test, inputStale: true, outputStale: Boolean(test.output) || test.outputStale })) });
-        if (settings) await updateSettings({ ...settings, themisInputFile: draft.themisInputFile, themisOutputFile: draft.themisOutputFile, themisTestPrefix: draft.themisTestPrefix });
+        if (settings) await updateSettings({ ...settings, themisInputFile: draft.themisInputFile, themisOutputFile: draft.themisOutputFile });
         notify('AI đã đưa bản đề và tên file Themis vào bước 1 để bạn kiểm tra, chỉnh sửa.');
       } catch (error) { notify(`AI trả về dữ liệu đề hoặc tên file Themis không hợp lệ: ${(error as Error).message}`, 'error'); }
     }
@@ -513,7 +523,7 @@ function App() {
       const result = await window.studio.generateTests(active.id, active.testPlan, active.seed, source, active.validator, statementVersion(active.statement), active.tests.map((test) => test.sha256).filter((hash): hash is string => Boolean(hash)));
       const additions = result.tests.map((test, index) => ({ ...test, name: `TEST${String(active.tests.length + index + 1).padStart(2, '0')}` }));
       const saved = await window.studio.saveProject({ ...active, generator: source, tests: [...active.tests, ...additions], generationLogs: [...active.generationLogs, result.log].slice(-100) });
-      setActive(saved); setDirty(false);
+      upsertProject(saved); setActive(saved); setDirty(false);
       setSolutionCheckKey('');
       setGenerationProgress(null);
       notify(result.log.warnings[0] ?? `Đã sinh ${result.log.generated}/${result.log.requested} input duy nhất và hợp lệ.`, result.log.warnings.length ? 'info' : 'success');
@@ -540,7 +550,7 @@ function App() {
         return false;
       }
       const saved = await window.studio.saveProject({ ...active, solution: source });
-      setActive(saved); setDirty(false);
+      upsertProject(saved); setActive(saved); setDirty(false);
       setSolutionCheckKey(solutionKey(active, source));
       notify('Đã tự biên dịch và chạy thử lời giải trên testcase đầu.');
       return true;
@@ -760,7 +770,7 @@ function Problem({ project, update, settings, updateSettings, sourceMode, setSou
       <div className="image-source-actions"><button className="button button-secondary button-small" onClick={onPickImage}><FileImage size={14} /> {photoName ? 'Đổi ảnh' : 'Chọn ảnh'}</button>{photoName && <button className="button button-primary button-small" onClick={onExtract} disabled={aiBusy}><Sparkles size={14} /> Đọc ảnh bằng AI</button>}</div>
     </section>}
     <div className="editor-layout"><div className="panel editor-panel"><div className="panel-toolbar"><div className="toolbar-title"><FileText size={16} /><b>{sourceMode === 'image' ? 'Nội dung trích xuất / chỉnh sửa' : 'Nội dung đề'}</b><span className="format-pill">MARKDOWN</span></div></div><div className="document-title"><input value={project.name} onChange={(e) => update({ name: e.target.value })} aria-label="Tên bài thi" /><span>ĐỀ BÀI / MÔ TẢ</span></div><textarea className="code-textarea markdown-input" spellCheck={false} value={project.statement} onChange={(e) => update({ statement: e.target.value, tests: project.tests.map((test) => ({ ...test, inputStale: true, outputStale: Boolean(test.output) || test.outputStale })) })} placeholder={sourceMode === 'image' ? 'Nội dung đọc từ ảnh sẽ hiện tại đây. Bạn cũng có thể tự nhập hoặc chỉnh sửa.' : 'Nhập ý tưởng hoặc soạn đề bằng Markdown...'} /><div className="editor-footer"><span><span className="dot green" /> Tự lưu trên máy</span><span>Markdown · LaTeX <span className="footer-sep">·</span> {project.statement.length} ký tự</span></div></div><div className="panel preview-panel"><div className="panel-toolbar"><div className="toolbar-title"><BookOpen size={16} /><b>Xem trước</b></div><span className="preview-live"><span className="dot green" /> TRỰC TIẾP</span></div><div className="markdown-preview"><ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>{project.statement || '*Nội dung xem trước sẽ hiện tại đây.*'}</ReactMarkdown></div></div></div>
-    {settings && <section className="panel settings-card problem-themis-settings"><div className="settings-title"><div className="settings-icon orange"><Folder size={18} /></div><div><h3>Tên file Themis</h3><p>AI sẽ đề xuất tên khi tạo đề; bạn có thể chỉnh sửa trước khi xuất bộ Themis.</p></div></div><div className="settings-form-grid themis-names"><label><span>Input</span><input className="text-input" value={settings.themisInputFile} onChange={(event) => void updateSettings({ ...settings, themisInputFile: event.target.value })} placeholder="BAI.INP" /></label><label><span>Output</span><input className="text-input" value={settings.themisOutputFile} onChange={(event) => void updateSettings({ ...settings, themisOutputFile: event.target.value })} placeholder="BAI.OUT" /></label><label><span>Tiền tố TEST</span><input className="text-input" value={settings.themisTestPrefix} onChange={(event) => void updateSettings({ ...settings, themisTestPrefix: event.target.value })} placeholder="TEST" /></label></div></section>}
+    {settings && <section className="panel settings-card problem-themis-settings"><div className="settings-title"><div className="settings-icon orange"><Folder size={18} /></div><div><h3>Tên file Themis</h3><p>AI sẽ đề xuất tên khi tạo đề; bạn có thể chỉnh sửa trước khi xuất bộ Themis. Tiền tố testcase luôn là TEST.</p></div></div><div className="settings-form-grid themis-names"><label><span>Input</span><input className="text-input" value={settings.themisInputFile} onChange={(event) => void updateSettings({ ...settings, themisInputFile: event.target.value })} placeholder="BAI.INP" /></label><label><span>Output</span><input className="text-input" value={settings.themisOutputFile} onChange={(event) => void updateSettings({ ...settings, themisOutputFile: event.target.value })} placeholder="BAI.OUT" /></label></div></section>}
   </div>;
 }
 
