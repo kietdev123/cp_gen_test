@@ -85,9 +85,14 @@
           "testlib.h",
           "LICENSE"
         ]
+      },
+      {
+        "from": "build/icons/LUCIDE-LICENSE.txt",
+        "to": "licenses/LUCIDE-LICENSE.txt"
       }
     ],
     "win": {
+      "icon": "build/icon.svg",
       "target": [
         "zip"
       ],

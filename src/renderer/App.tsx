@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import packageJson from '../../package.json';
+import appIcon from '../../build/icon.svg';
 import userGuideMarkdown from '../../docs/USER_GUIDE.md?raw';
 import ReactMarkdown from 'react-markdown';
 import Editor, { loader } from '@monaco-editor/react';
@@ -641,7 +642,7 @@ function App() {
     <div className={`app-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`} inert={busy ? true : undefined} aria-busy={Boolean(busy)}>
     <aside className="sidebar">
       <div className="brand">
-        <div className="brand-mark" title="CP Test Studio"><Command size={20} /></div>
+        <div className="brand-mark" title="CP Test Studio"><img src={appIcon} alt="" /></div>
         <div className="brand-copy"><strong>CP Test Studio</strong><span>THI LẬP TRÌNH • VI</span></div>
         <button className="sidebar-toggle" type="button" onClick={() => setSidebarCollapsed((collapsed) => !collapsed)} title={sidebarCollapsed ? 'Mở rộng thanh bên' : 'Thu nhỏ thanh bên'} aria-label={sidebarCollapsed ? 'Mở rộng thanh bên' : 'Thu nhỏ thanh bên'}>
           {sidebarCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
