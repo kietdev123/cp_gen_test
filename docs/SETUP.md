@@ -14,6 +14,7 @@ Gói ZIP portable vẫn được tạo bằng `npm run dist:win` nếu không mu
 - Windows 10/11 64-bit.
 - Node.js 22 trở lên và npm.
 - MinGW-w64 được chuẩn bị tự động khi chạy source và được đóng gói cùng app Windows; người cài app không cần cài riêng compiler.
+- Testlib `testlib.h` và license được lưu trong source, đóng gói cùng ứng dụng; generator không cần tải thư viện lúc chạy.
 - Pandoc, Typst và Roboto được tải tự động khi chạy source; ứng dụng MSI đóng gói sẵn các công cụ này.
 - API key OpenAI hoặc Google Gemini là tùy chọn, chỉ cần cho chức năng AI.
 

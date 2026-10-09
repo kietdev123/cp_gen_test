@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { AiRequest, AppApi, Project, ProgramKind, Provider, Settings, TestCase } from '../shared/types';
+import type { AiRequest, AppApi, Project, ProgramKind, Provider, Settings, TestCase, TestGenerationProgress, TestGroup, TestPlan, TestRunProgress } from '../shared/types';
 
 const api: AppApi = {
   getStatus: () => ipcRenderer.invoke('app:status'),
@@ -20,8 +20,19 @@ const api: AppApi = {
   chooseCompiler: () => ipcRenderer.invoke('settings:compiler:choose'),
   compile: (projectId: string, kind: ProgramKind, source: string) => ipcRenderer.invoke('code:compile', projectId, kind, source),
   run: (projectId: string, kind: ProgramKind, input: string, args?: string[], timeoutMs?: number) => ipcRenderer.invoke('code:run', projectId, kind, input, args, timeoutMs),
-  generateTests: (projectId: string, count: number, seed: number, mode: string, source: string) => ipcRenderer.invoke('tests:generate', projectId, count, seed, mode, source),
-  runTests: (projectId: string, solution: string, tests: TestCase[], timeLimitMs: number) => ipcRenderer.invoke('tests:run', projectId, solution, tests, timeLimitMs),
+  generateTests: (projectId: string, plan: TestPlan, seed: number, source: string, validator: string, statementVersion: string, excludedHashes: string[] = []) => ipcRenderer.invoke('tests:generate', projectId, plan, seed, source, validator, statementVersion, excludedHashes),
+  regenerateTest: (projectId: string, group: TestGroup, seed: number, testIndex: number, source: string, validator: string, statementVersion: string, excludedHashes: string[]) => ipcRenderer.invoke('tests:regenerate-one', projectId, group, seed, testIndex, source, validator, statementVersion, excludedHashes),
+  onGenerationProgress: (callback: (progress: TestGenerationProgress) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, progress: TestGenerationProgress) => callback(progress);
+    ipcRenderer.on('tests:generation-progress', listener);
+    return () => ipcRenderer.removeListener('tests:generation-progress', listener);
+  },
+  runTests: (projectId: string, solution: string, tests: TestCase[], timeLimitMs: number, testIds?: string[], oracleSolution?: string) => ipcRenderer.invoke('tests:run', projectId, solution, tests, timeLimitMs, testIds, oracleSolution),
+  onTestRunProgress: (callback: (progress: TestRunProgress) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, progress: TestRunProgress) => callback(progress);
+    ipcRenderer.on('tests:run-progress', listener);
+    return () => ipcRenderer.removeListener('tests:run-progress', listener);
+  },
   exportThemis: (project: Project) => ipcRenderer.invoke('export:themis', project),
   exportMarkdown: (project: Project) => ipcRenderer.invoke('export:markdown', project),
   exportPdf: (project: Project) => ipcRenderer.invoke('export:pdf', project),

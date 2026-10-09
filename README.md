@@ -29,26 +29,29 @@ Hướng dẫn chi tiết ở [docs/SETUP.md](docs/SETUP.md), thao tác ở [doc
 
 - Quản lý dự án và lưu tự động trong thư mục dữ liệu ứng dụng của Windows.
 - Soạn đề Markdown, preview và công thức LaTeX; lưu ảnh gốc trong dự án và trích nội dung bằng AI theo yêu cầu.
-- Cấu hình OpenAI hoặc Gemini, mã hóa khóa bằng `safeStorage` của Electron; gọi AI phân tích đề, gợi ý generator và lời giải khi người dùng bấm nút.
-- Viết và biên dịch generator/lời giải C++17 bằng `g++`; tạo testcase theo seed, chạy lời giải trên testcase và lưu stdout thành output.
+- Lập Test Plan theo nhóm random, boundary, constructive hoặc stress; chỉnh sửa số lượng và tham số offline.
+- Dùng Testlib đã đóng gói để biên dịch generator C++17; Electron chạy theo từng testcase, kiểm tra validator tùy chọn và loại input trùng bằng SHA-256.
+- Cấu hình OpenAI hoặc Gemini; AI hỗ trợ phân tích đề, generator, validator và lời giải theo yêu cầu. Cache theo provider, model, prompt và phiên bản; Quick tạo plan cùng generator trong một request.
+- Chạy lời giải trên test hiện có, lưu stdout, chạy lại toàn bộ/nhóm và tùy chọn đối chiếu với oracle theo token.
 - Xuất bộ test ZIP theo `BAI/TESTxx/BAI.INP` và `BAI.OUT`; xuất Markdown, DOCX có công thức Word và PDF bằng Pandoc/Typst.
-- Giao diện tiếng Việt dùng Roboto đóng gói offline, có sáng/tối, thông báo lỗi và trạng thái compiler rõ ràng.
+- Trình soạn C++ dùng Monaco đóng gói offline; giao diện tiếng Việt dùng Roboto, có sáng/tối, thông báo lỗi và trạng thái compiler rõ ràng.
 
 ## Kiến trúc
 
 - Electron Main Process giữ quyền truy cập file, API key, compiler, runner và export.
 - Preload chỉ phơi các hàm IPC có kiểu dữ liệu; renderer bật `contextIsolation`, không bật Node integration.
 - Project JSON, Markdown, source và testcase lưu dưới `app.getPath('userData')/projects/`.
+- Test Plan, trạng thái/phiên bản testcase, SHA-256 và nhật ký sinh test được lưu theo dự án. Testlib header và license được đóng gói trong ứng dụng.
 - C++ chạy bằng child process với danh sách tham số, không ghép lệnh shell. Runner có timeout và giới hạn stdout/stderr cơ bản.
 
 ## Giới hạn MVP
 
-- Mã chạy trong tiến trình riêng nhưng chưa có sandbox OS hoặc giới hạn RAM; chỉ chạy mã bạn tin cậy.
-- Generator nhận seed, số thứ tự testcase và mode qua `argv[1..3]`; app không kèm `testlib.h` và chưa có trình tạo cấu trúc testcase tự động.
-- Chưa có validator trong giao diện, stress differential/brute-force checker, xuất DOCX tùy biến, quản lý nhiều thư mục dự án hay tùy chỉnh tên file Themis.
+- C++ chạy trong tiến trình con có timeout và giới hạn output; chưa có sandbox OS hay giới hạn RAM. Chỉ chạy mã bạn tin cậy.
+- Validator cần được rà soát và bổ sung ràng buộc riêng cho đề; template đi kèm chỉ là điểm bắt đầu.
+- Oracle so sánh token sau khi chuẩn hóa khoảng trắng; chưa thay thế checker chuyên biệt hoặc kiểm chứng tính đúng đắn của chính oracle.
 - Tác vụ AI phụ thuộc API/key và mô hình/provider bạn cấu hình; AI có thể tạo nội dung sai cần người dùng xem lại.
 - Bố cục tài liệu được tạo từ Markdown và công thức TeX; cần kiểm tra lại khi đề có HTML tùy biến hoặc cú pháp ngoài Markdown chuẩn.
-- Không chạy functional/end-to-end test trong phạm vi bàn giao. Xem [BUILD_REPORT.md](BUILD_REPORT.md) để biết các lệnh build đã chạy.
+- Không chạy functional/end-to-end test trong phạm vi bàn giao. Xem [docs/TEST_GENERATION_V2.md](docs/TEST_GENERATION_V2.md), [docs/MANUAL_TEST.md](docs/MANUAL_TEST.md) và [BUILD_REPORT.md](BUILD_REPORT.md).
 
 
 Set-Location "C:\Users\Kiet Gay\Desktop\cp_gen_test"

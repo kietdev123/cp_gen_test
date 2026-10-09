@@ -1,48 +1,43 @@
 # Checklist kiểm tra thủ công
 
-Các bước dưới đây dành cho người dùng sau khi build. Không tự động gọi API hoặc thực thi mã bài mẫu khi build.
+Checklist này dành cho người dùng kiểm tra ứng dụng sau khi build. Khi triển khai source, agent chỉ chạy typecheck và production build; không gọi API thật hoặc chạy kiểm thử chức năng/E2E.
 
-## Mở app và dự án
+## 1. Đề bài và Test Plan
 
-- [ ] Mở app lần đầu, thấy lời chào và có thể **Bỏ qua, dùng không cần AI**.
-- [ ] Tạo dự án, nhập tên tiếng Việt có dấu; tên hiện đầy đủ ở sidebar.
-- [ ] Đóng/mở lại app; dự án, đề và mã nguồn vẫn còn.
-- [ ] Sửa đề; đợi nhãn lưu cập nhật; bấm **Lưu**; mở thư mục để xem JSON/Markdown.
-- [ ] Đổi theme sáng/tối rồi điều hướng qua các mục; lựa chọn được giữ.
-- [ ] Xóa dự án thử nghiệm; dự án biến mất khỏi danh sách.
+- [ ] Mở app lần đầu; bỏ qua cấu hình AI vẫn vào được dashboard.
+- [ ] Tạo dự án, nhập đề Markdown và kiểm tra preview, Unicode, công thức.
+- [ ] Tạo Test Plan thủ công không cần API; thêm/xóa nhóm và đổi mode, số lượng, params.
+- [ ] Đổi đề rồi xác nhận plan báo cần đồng bộ/phân tích lại, testcase cũ còn được lưu và đánh dấu cũ.
+- [ ] Có API key: chạy **AI phân tích đề** và **Quick: plan + generator**; xem JSON đã được kiểm tra schema và rà soát nội dung trước khi dùng.
+- [ ] Chưa có key: gọi tính năng AI, lưu key trong modal để tiếp tục; Cancel không làm mất nội dung đã nhập.
+- [ ] Vào Generator khi đang dùng template mặc định: hộp thoại hỏi dùng AI hoặc tự nhập; thao tác đang chạy hiển thị loading ở giữa và khóa tương tác.
 
-## Đề bài và AI (chỉ kiểm tra khi có key)
+## 2. Generator, validator và sinh testcase
 
-- [ ] Nhập Markdown gồm heading, danh sách, bảng và công thức; preview hiển thị dễ đọc.
-- [ ] Chọn ảnh PNG/JPG/WebP; loại file khác được thông báo.
-- [ ] Không có key: chọn AI hiển thị hướng dẫn cấu hình, nội dung soạn thảo còn nguyên.
-- [ ] Có key: bấm **Kiểm tra kết nối** và xác nhận thông báo phù hợp.
-- [ ] Dùng ảnh đề / **Phân tích bằng AI**; rà soát kết quả trước khi dùng.
-- [ ] Sai key/model/mạng: lỗi hiện rõ và nội dung đề không bị mất.
+- [ ] Dùng template generator; biên dịch được với Testlib đã đóng gói, không cần tải `testlib.h` riêng.
+- [ ] Xem/sửa generator và xác nhận nó nhận seed positional, `--testIndex`, `--mode` cùng tham số nhóm.
+- [ ] Tạo validator đúng với đề; input hợp lệ có exit code 0, input sai bị loại và có stderr.
+- [ ] Sinh test theo nhiều nhóm; tiến độ và nhật ký hiển thị số lượng sinh được, trùng, invalid, lỗi và retry.
+- [ ] Sinh lặp cùng miền nhỏ: SHA-256 phát hiện trùng, app thử sinh bù tối đa 8 lần và cảnh báo nếu không đủ số input duy nhất.
+- [ ] Sinh lại một testcase: chỉ thay bản ghi được chọn, các testcase khác còn nguyên.
+- [ ] Sửa generator hoặc validator: testcase trước được giữ lại và đánh dấu input cũ.
+- [ ] Compile lỗi: xem diagnostics và có thể yêu cầu AI đề xuất sửa; mã được đưa vào editor để người dùng rà soát.
 
-## Compiler, generator và solution
+## 3. Lời giải, runner và export
 
-- [ ] Không cài compiler: dashboard/cài đặt báo thiếu g++; phần còn lại của app vẫn mở.
-- [ ] Chọn `g++.exe` hợp lệ; compile C++17 đơn giản thành công.
-- [ ] Compile mã lỗi cú pháp; diagnostics hiển thị và có thể sửa rồi biên dịch lại.
-- [ ] Generator đọc `argv[1..3]`, in input vào stdout; sinh vài testcase và xác nhận seed tái lập.
-- [ ] Generator thoát lỗi, quá thời gian hoặc in dữ liệu quá lớn; app báo lỗi rõ.
-- [ ] Solution đọc stdin, in kết quả; chạy thử và chạy tất cả test.
-- [ ] Solution lỗi runtime hoặc quá thời gian; testcase báo thất bại nhưng output cũ vẫn giữ nguyên.
+- [ ] Nhập hoặc tạo lời giải C++17, biên dịch và chạy trên input mẫu.
+- [ ] Chạy tất cả input hoặc một nhóm; xem stdout, stderr, runtime, timeout và trạng thái từng testcase.
+- [ ] Cho chương trình thoát sớm khi app đang gửi input; app vẫn hoạt động và hiển thị kết quả lỗi của testcase.
+- [ ] Sửa lời giải: output cũ được giữ nhưng đánh dấu cũ; chạy lại input có sẵn không sinh lại testcase.
+- [ ] Thêm oracle độc lập: output khớp theo token thành `VERIFIED`; mismatch hoặc oracle lỗi không được đánh dấu xác minh.
+- [ ] Mục export hiển thị input/output có thể xuất và số bản ghi lỗi, trùng, thiếu output hoặc cũ bị bỏ qua.
+- [ ] Xác nhận ZIP Themis có cấu trúc `BAI/TESTxx/BAI.INP` và `BAI.OUT`; đổi tên input/output/prefix trong Cài đặt và kiểm tra lại.
+- [ ] Xuất Markdown, DOCX và PDF; kiểm tra Unicode, công thức và bố cục.
 
-## Export
+## 4. Lỗi thường gặp
 
-- [ ] Chưa chạy solution: Themis ZIP từ chối xuất.
-- [ ] Sau khi các test chạy thành công, xuất ZIP và kiểm tra cấu trúc `BAI/TESTxx/BAI.INP` + `BAI.OUT`.
-- [ ] Xuất Markdown và mở file để xác nhận Unicode.
-- [ ] Xuất PDF; kiểm tra tiếng Việt, công thức inline/khối và ngắt dòng `<br>`.
-- [ ] Xuất DOCX; xác nhận công thức là Equation có thể chỉnh trong Word và font văn bản là Roboto.
-
-## Cách nhận biết lỗi
-
-- Thông báo đỏ/toast: thao tác thất bại; xem câu chữ và giữ lại nội dung.
-- `g++` không chạy: xác nhận đường dẫn compiler và PATH, mở lại app sau khi sửa PATH.
-- AI lỗi: kiểm tra provider, model, quyền API và kết nối Internet.
-- ZIP thiếu file: xác nhận testcase có trạng thái chạy thành công.
-- DOCX/PDF lỗi: xác nhận thư mục `.tools/document-export/` có Pandoc, Typst, template và font đi kèm.
-- Mã C++ treo: dừng theo timeout; sửa generator/solution rồi chạy lại.
+- Compiler không chạy: kiểm tra compiler đi kèm hoặc đường dẫn `g++.exe` trong Cài đặt.
+- Generator treo/tạo output quá lớn: app dừng theo timeout/giới hạn output; xem stderr và sửa mã.
+- Không đủ test duy nhất: mở nhật ký; đổi seed, params hoặc thuật toán generator.
+- AI lỗi: kiểm tra provider, model, API key và kết nối. Sinh testcase, runner và export không cần AI.
+- Export bỏ qua test: xem trạng thái và phiên bản; chạy lại lời giải để tạo output mới.

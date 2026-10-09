@@ -1,5 +1,24 @@
 # Build report
 
+Ngày cập nhật: 2026-10-09
+
+## CP Test Studio V2 — xác nhận source
+
+- `npm run typecheck` — **exit code 0** sau khi bổ sung Test Plan, Testlib generator, validator, dedup/retry, runner, cache và export review.
+- `npm run build` — **exit code 0**; electron-vite tạo thành công bundle main, preload và renderer.
+- Build in warning từ hai comment annotation trong Zod mà Rollup không diễn giải được; Rollup bỏ các comment này. Không có lỗi build.
+- Monaco Editor và worker được bundle offline; không tải editor từ CDN. `npm install` báo 16 advisory trong dependency tree (6 low, 8 moderate, 2 high); không tự chạy `npm audit fix`.
+- Không gọi OpenAI/Gemini thật, không chạy generator/solution mẫu và không chạy functional/E2E test theo giới hạn kiểm thử.
+- App chưa có sandbox OS hoặc giới hạn RAM. Xem [docs/TEST_GENERATION_V2.md](docs/TEST_GENERATION_V2.md) để biết các giới hạn V2.
+
+## Follow-up — generator prompt, loading overlay và runner EOF
+
+- `npm run typecheck` — **exit code 0**.
+- `npm run build` — **exit code 0**; renderer/main/preload bundle thành công. Còn warning annotation của Zod như trên.
+- Generator mặc định được nhận diện là starter nên bước này hỏi người dùng dùng AI hay tự nhập. Busy overlay đặt giữa màn hình và vô hiệu hóa phần còn lại của app.
+- Runner bắt lỗi stream `EPIPE`/`EOF` khi chương trình con đóng stdin sớm, tránh lỗi JavaScript uncaught trong main process.
+- Không chạy thao tác chức năng hoặc E2E; checklist kiểm tra thủ công được bổ sung tại [docs/MANUAL_TEST.md](docs/MANUAL_TEST.md).
+
 Ngày build: 2026-10-08
 
 ## Cập nhật source xuất tài liệu
