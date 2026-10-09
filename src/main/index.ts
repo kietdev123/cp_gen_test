@@ -638,11 +638,12 @@ ipcMain.handle('export:all', async (_event, project: Project) => {
   if (choice.canceled || !choice.filePaths[0]) return null;
   const directory = choice.filePaths[0];
   const base = safeFileName(project.name);
-  const files = [`${base}.md`, `${base}.pdf`, `${base}.docx`, `${base}.zip`];
+  const files = [`${base}.md`, `${base}.pdf`, `${base}.docx`, `${base}_solution.cpp`, `${base}.zip`];
   await fs.writeFile(path.join(directory, files[0]), `# ${project.name}\n\n${project.statement}`, 'utf8');
   await fs.writeFile(path.join(directory, files[1]), await createPdf(project));
   await fs.writeFile(path.join(directory, files[2]), await createDocx(project));
-  await createThemisArchive(path.join(directory, files[3]), ready, await readSettings());
+  await fs.writeFile(path.join(directory, files[3]), project.solution, 'utf8');
+  await createThemisArchive(path.join(directory, files[4]), ready, await readSettings());
   return { directory, files };
 });
 

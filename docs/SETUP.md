@@ -58,7 +58,7 @@ Compiler cần hỗ trợ `-std=c++17`. Project compile vào thư mục build c�
 
 ## Cấu hình AI
 
-Trong **Cài đặt → Trợ lý AI**, chọn provider và model, dán API key rồi bấm **Lưu key**. Electron `safeStorage` mã hóa key bằng cơ chế bảo vệ thông tin của Windows. Nút **Kiểm tra kết nối** mới gửi request kiểm tra; các nút AI trên màn hình chỉ gửi dữ liệu khi được bấm.
+Trong **Cài đặt → Trợ lý AI**, chọn provider và model, dán API key rồi bấm **Lưu key**. Electron `safeStorage` mã hóa key bằng cơ chế bảo vệ thông tin của Windows. Khi mở bước Test Plan thiếu đặc tả, Generator thiếu mã hoặc Lời giải trống, ứng dụng tự gọi AI; nếu chưa lưu key, ứng dụng sẽ yêu cầu cấu hình key trước khi gửi request. Các chức năng AI khác chỉ gửi dữ liệu khi được chọn.
 
 Key và nội dung dự án không được ghi vào log ứng dụng. Tác vụ AI cần Internet và chịu điều khoản/chi phí của nhà cung cấp API.
 

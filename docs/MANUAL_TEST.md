@@ -10,7 +10,8 @@ Checklist này dành cho người dùng kiểm tra ứng dụng sau khi build. K
 - [ ] Đổi đề rồi xác nhận plan báo cần đồng bộ/phân tích lại, testcase cũ còn được lưu và đánh dấu cũ.
 - [ ] Có API key: chạy **AI phân tích đề** và **Quick: plan + generator**; xem JSON đã được kiểm tra schema và rà soát nội dung trước khi dùng.
 - [ ] Chưa có key: gọi tính năng AI, lưu key trong modal để tiếp tục; Cancel không làm mất nội dung đã nhập.
-- [ ] Vào Generator khi đang dùng template mặc định: hộp thoại hỏi dùng AI hoặc tự nhập; thao tác đang chạy hiển thị loading ở giữa và khóa tương tác.
+- [ ] Vào Test Plan mới/rỗng: AI tự phân tích; loading ở giữa khóa tương tác. Nếu chưa có key, nhập key để tiếp tục hoặc hủy.
+- [ ] Vào Generator với template mặc định và Lời giải còn trống: AI tự tạo mã không hỏi dùng AI; loading ở giữa khóa tương tác.
 
 ## 2. Generator, validator và sinh testcase
 
@@ -32,7 +33,7 @@ Checklist này dành cho người dùng kiểm tra ứng dụng sau khi build. K
 - [ ] Thêm oracle độc lập: output khớp theo token thành `VERIFIED`; mismatch hoặc oracle lỗi không được đánh dấu xác minh.
 - [ ] Mục export hiển thị input/output có thể xuất và số bản ghi lỗi, trùng, thiếu output hoặc cũ bị bỏ qua.
 - [ ] Xác nhận ZIP Themis có cấu trúc `BAI/TESTxx/BAI.INP` và `BAI.OUT`; đổi tên input/output/prefix trong Cài đặt và kiểm tra lại.
-- [ ] Xuất Markdown, DOCX và PDF; kiểm tra Unicode, công thức và bố cục.
+- [ ] Xuất Markdown, DOCX, PDF, `<tên đề>_solution.cpp` và ZIP; kiểm tra Unicode, công thức và bố cục.
 
 ## 4. Lỗi thường gặp
 

@@ -51,3 +51,12 @@ Ngày build: 2026-10-08
 - npm báo 14 advisory ở dependency tree trong lần cài package (4 low, 8 moderate, 2 high). Chưa chạy `npm audit fix` vì có thể làm thay đổi phiên bản ngoài phạm vi build này.
 - electron-builder dùng icon mặc định vì project chưa có icon riêng.
 - Giao diện và vùng soạn mã dùng Roboto được đóng gói trong app; công thức toán vẫn dùng font glyph chuyên dụng của KaTeX.
+
+## Follow-up — tự gọi AI ở bước 2–4 và xuất lời giải
+
+- Test Plan tự phân tích khi đặc tả còn thiếu hoặc lệch phiên bản đề; Generator và Lời giải tự tạo mã khi chưa có source dùng được. Nội dung đã có sẵn không bị tự ghi đè.
+- Prompt Generator dùng Test Plan; prompt lời giải dùng Test Plan và generator của bước trước làm ngữ cảnh, trong đó đề bài vẫn là đặc tả ưu tiên. Phiên bản prompt tăng lên `2.1.0` để tách cache cũ.
+- Bộ export có thêm `<tên đề>_solution.cpp`, nằm cùng Markdown, PDF, DOCX và ZIP Themis.
+- `npm run typecheck` — **exit code 0**.
+- `npm run build` — **exit code 0**; main, preload và renderer bundle thành công. Rollup vẫn cảnh báo hai annotation comment từ Zod và tự bỏ các comment này.
+- Không gọi API AI hoặc chạy kiểm thử chức năng/E2E; checklist thủ công đã cập nhật tại [docs/MANUAL_TEST.md](docs/MANUAL_TEST.md).

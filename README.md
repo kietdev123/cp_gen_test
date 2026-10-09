@@ -31,9 +31,9 @@ Hướng dẫn chi tiết ở [docs/SETUP.md](docs/SETUP.md), thao tác ở [doc
 - Soạn đề Markdown, preview và công thức LaTeX; lưu ảnh gốc trong dự án và trích nội dung bằng AI theo yêu cầu.
 - Lập Test Plan theo nhóm random, boundary, constructive hoặc stress; chỉnh sửa số lượng và tham số offline.
 - Dùng Testlib đã đóng gói để biên dịch generator C++17; Electron chạy theo từng testcase, kiểm tra validator tùy chọn và loại input trùng bằng SHA-256.
-- Cấu hình OpenAI hoặc Gemini; AI hỗ trợ phân tích đề, generator, validator và lời giải theo yêu cầu. Cache theo provider, model, prompt và phiên bản; Quick tạo plan cùng generator trong một request.
+- Cấu hình OpenAI hoặc Gemini; Test Plan, generator và lời giải tự gọi AI khi nội dung còn thiếu. Validator và chức năng AI khác được gọi theo yêu cầu. Cache theo provider, model, prompt và phiên bản; Quick tạo plan cùng generator trong một request.
 - Chạy lời giải trên test hiện có, lưu stdout, chạy lại toàn bộ/nhóm và tùy chọn đối chiếu với oracle theo token.
-- Xuất bộ test ZIP theo `BAI/TESTxx/BAI.INP` và `BAI.OUT`; xuất Markdown, DOCX có công thức Word và PDF bằng Pandoc/Typst.
+- Xuất bộ test ZIP theo `BAI/TESTxx/BAI.INP` và `BAI.OUT`; xuất Markdown, DOCX có công thức Word, PDF bằng Pandoc/Typst và file lời giải C++17.
 - Trình soạn C++ dùng Monaco đóng gói offline; giao diện tiếng Việt dùng Roboto, có sáng/tối, thông báo lỗi và trạng thái compiler rõ ràng.
 
 ## Kiến trúc
