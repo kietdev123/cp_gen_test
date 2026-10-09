@@ -781,7 +781,7 @@ function CppEditor({ value, onChange, height = '340px' }: { value: string; onCha
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
     return () => observer.disconnect();
   }, []);
-  return <div className="monaco-editor-shell" style={{ height }}><Editor language="cpp" theme={theme} value={value} onChange={(next) => onChange(next ?? '')} loading={<span>Đang tải editor…</span>} options={{ automaticLayout: true, minimap: { enabled: false }, fontSize: 12, fontFamily: 'Cascadia Code, Consolas, monospace', scrollBeyondLastLine: false, tabSize: 4, wordWrap: 'off', padding: { top: 10, bottom: 10 } }} /></div>;
+  return <div className="monaco-editor-shell" style={{ height }}><Editor language="cpp" theme={theme} value={value} onChange={(next) => onChange(next ?? '')} loading={<span>Đang tải editor…</span>} options={{ automaticLayout: true, minimap: { enabled: false }, fontSize: 14, fontFamily: 'Cascadia Code, Consolas, monospace', scrollBeyondLastLine: false, tabSize: 4, wordWrap: 'off', padding: { top: 10, bottom: 10 } }} /></div>;
 }
 
 function TestPlanEditor({ project, update, analyze, quickCreate, busy }: { project: Project; update: (p: Partial<Project>) => void; analyze: () => void; quickCreate: () => void; busy: string }) {
