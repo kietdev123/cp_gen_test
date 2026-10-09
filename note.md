@@ -5,7 +5,7 @@ bỏ modal "Kết quả từ AI"
 
 
 
-Tên file Themis: là ở bước 1 nhập, không phải trong cài đặt
+Tên file Themis: là ở bước 1 nhập/ai gen, không phải trong cài đặt
 
 
 bỏ 
