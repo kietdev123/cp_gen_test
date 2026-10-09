@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import packageJson from '../../package.json';
 import ReactMarkdown from 'react-markdown';
 import Editor, { loader } from '@monaco-editor/react';
 import * as monaco from 'monaco-editor/editor/editor.api.js';
@@ -9,12 +10,12 @@ import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import {
   Activity, ArrowDownToLine, ArrowLeft, ArrowRight, BadgeCheck, BookOpen, Braces, Check,
-  ChevronDown, CircleHelp, Code2, Command, Download, FileCode2, FileImage, FileText, Folder,
-  FolderOpen, Github, HardDrive, KeyRound, ListChecks, LoaderCircle,
+  ChevronDown, ChevronLeft, ChevronRight, CircleHelp, Code2, Command, Download, FileCode2, FileImage, FileText, Folder,
+  FolderOpen, KeyRound, ListChecks, LoaderCircle,
   Moon, Play, Plus, RefreshCw, Rocket, Save, Settings as SettingsIcon, Shield, Sparkles,
   Sun, Trash2, TriangleAlert, X,
 } from 'lucide-react';
-import type { AiRequest, AiUsage, GeneratorMode, Project, ProgramKind, Provider, Settings, TestCase, TestGenerationProgress, TestGroup, TestPlan, TestRunProgress } from '../shared/types';
+import type { AiRequest, GeneratorMode, Project, ProgramKind, Provider, Settings, TestCase, TestGenerationProgress, TestGroup, TestPlan, TestRunProgress } from '../shared/types';
 import { AI_PROMPT_VERSION, AI_PROMPTS } from '../shared/ai-prompts';
 import { AiQuickResultSchema, AiTestPlanSchema, statementVersion } from '../shared/validation';
 import { DEFAULT_GENERATOR_TEMPLATE, DEFAULT_VALIDATOR_TEMPLATE } from '../shared/generator-template';
@@ -25,7 +26,6 @@ loader.config({ monaco });
 
 const nav: { id: Page; label: string; icon: typeof FolderOpen; section?: string }[] = [
   { id: 'projects', label: 'Dự án', icon: FolderOpen, section: 'KHÔNG GIAN' },
-  { id: 'problem', label: 'Soạn đề', icon: BookOpen, section: 'SOẠN THẢO' },
   { id: 'settings', label: 'Cài đặt', icon: SettingsIcon, section: 'ỨNG DỤNG' },
 ];
 
@@ -88,6 +88,7 @@ const pageInfo: Record<Page, { title: string; subtitle: string }> = {
 
 function App() {
   const { projects, active, settings, page, dirty, setProjects, setActive, setSettings, setPage, setDirty, updateActive } = useApp();
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => window.localStorage.getItem('sidebar-collapsed') === 'true');
   const [onboarding, setOnboarding] = useState(false);
   const [aiKey, setAiKey] = useState('');
   const [aiKeyModal, setAiKeyModal] = useState<Provider | null>(null);
@@ -108,7 +109,6 @@ function App() {
   const [compileDiagnostics, setCompileDiagnostics] = useState<Partial<Record<ProgramKind, string>>>({});
   const [generationProgress, setGenerationProgress] = useState<TestGenerationProgress | null>(null);
   const [runProgress, setRunProgress] = useState<TestRunProgress | null>(null);
-  const [aiUsage, setAiUsage] = useState<(AiUsage & { cached?: boolean }) | null>(null);
   const [ideaPrompt, setIdeaPrompt] = useState('');
   const [sourceMode, setSourceMode] = useState<'text' | 'image'>('text');
   const [photo, setPhoto] = useState<{ data: string; mimeType: string; name: string } | null>(null);
@@ -142,6 +142,8 @@ function App() {
   }, [active, dirty, notify, setActive, setDirty]);
 
   useEffect(() => { document.documentElement.dataset.theme = settings?.theme ?? 'light'; }, [settings?.theme]);
+
+  useEffect(() => { window.localStorage.setItem('sidebar-collapsed', String(sidebarCollapsed)); }, [sidebarCollapsed]);
 
   useEffect(() => {
     const stopGeneration = window.studio.onGenerationProgress(setGenerationProgress);
@@ -209,7 +211,6 @@ function App() {
     setBusy(label);
     try {
       const response = await window.studio.askAi(request);
-      setAiUsage({ ...response.usage, cached: response.cached });
       return response.text;
     } catch (error) { notify((error as Error).message, 'error'); return ''; }
     finally { setBusy(''); }
@@ -620,23 +621,29 @@ function App() {
     if (next) setPage(next.id);
   };
   return <>
-    <div className="app-shell" inert={busy ? true : undefined} aria-busy={Boolean(busy)}>
+    <div className={`app-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`} inert={busy ? true : undefined} aria-busy={Boolean(busy)}>
     <aside className="sidebar">
-      <div className="brand"><div className="brand-mark"><Command size={20} /></div><div><strong>CP Test Studio</strong><span>THI LẬP TRÌNH • VI</span></div></div>
-      <button className="project-switcher" onClick={() => active ? setPage('problem') : setProjectModal(true)}>
-        <span className="switcher-icon"><Folder size={17} /></span><span className="switcher-text"><small>ĐANG LÀM VIỆC</small><b>{active?.name ?? 'Chọn dự án'}</b></span><ChevronDown size={15} className="muted" />
-      </button>
+      <div className="brand">
+        <div className="brand-mark" title="CP Test Studio"><Command size={20} /></div>
+        <div className="brand-copy"><strong>CP Test Studio</strong><span>THI LẬP TRÌNH • VI</span></div>
+        <button className="sidebar-toggle" type="button" onClick={() => setSidebarCollapsed((collapsed) => !collapsed)} title={sidebarCollapsed ? 'Mở rộng thanh bên' : 'Thu nhỏ thanh bên'} aria-label={sidebarCollapsed ? 'Mở rộng thanh bên' : 'Thu nhỏ thanh bên'}>
+          {sidebarCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+        </button>
+      </div>
       <nav className="side-nav">
         {nav.map((item) => <div key={item.id}>
           {item.section && <div className="nav-section">{item.section}</div>}
-          <button className={`nav-item ${(item.id === 'problem' ? isWorkflowPage(page) : page === item.id) ? 'active' : ''}`} onClick={() => setPage(item.id)}><item.icon size={18} strokeWidth={(item.id === 'problem' ? isWorkflowPage(page) : page === item.id) ? 2.3 : 1.8} /><span>{item.label}</span>{item.id === 'problem' && active?.tests.length ? <span className="nav-count">{active.tests.length}</span> : null}</button>
+          <button className={`nav-item ${page === item.id ? 'active' : ''}`} onClick={() => setPage(item.id)} title={sidebarCollapsed ? item.label : undefined}><item.icon size={18} strokeWidth={page === item.id ? 2.3 : 1.8} /><span>{item.label}</span></button>
         </div>)}
       </nav>
+      {settings && <button className="sidebar-theme-toggle" type="button" onClick={() => void updateSettings({ ...settings, theme: settings.theme === 'dark' ? 'light' : 'dark' })} title={settings.theme === 'dark' ? 'Chuyển sang chế độ sáng' : 'Chuyển sang chế độ tối'} aria-label={settings.theme === 'dark' ? 'Chuyển sang chế độ sáng' : 'Chuyển sang chế độ tối'}>
+        {settings.theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}<span>{settings.theme === 'dark' ? 'Chế độ sáng' : 'Chế độ tối'}</span>
+      </button>}
+      <div className="sidebar-version"><span>Phiên bản </span>{packageJson.version}</div>
     </aside>
 
     <main className="main-area">
-      <header className="topbar"><div className="breadcrumb"><span>CP Test Studio</span><ArrowRight size={13} /><b>{currentPage.title}</b>{active && <><ArrowRight size={13} /><span className="crumb-project">{active.name}</span></>}</div><div className="top-actions"><span className="local-badge"><Shield size={13} /> Dữ liệu trên máy</span>{aiUsage && <span className="local-badge ai-usage-badge">{aiUsage.cached ? "AI cache" : aiUsage.totalTokens !== undefined ? `${aiUsage.totalTokens} tokens` : "Usage chưa có"}</span>}{active && <span className={`save-indicator ${dirty ? 'pending' : ''}`}><span className="dot" />{dirty ? 'Đang lưu…' : 'Đã lưu tự động'}</span>}<button className="icon-button" title="Đổi giao diện" onClick={() => settings && void updateSettings({ ...settings, theme: settings.theme === 'dark' ? 'light' : 'dark' })}>{settings?.theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}</button></div></header>
-      <section className="page-heading"><div><div className="eyebrow">{active ? <><span className="dot green" /> DỰ ÁN ĐANG MỞ</> : 'KHÔNG GIAN SOẠN ĐỀ'}</div><h1>{currentPage.title}</h1><p>{currentPage.subtitle}</p></div>{page !== 'settings' && <div className="heading-actions">{active && <button className="button button-secondary" onClick={() => void window.studio.chooseProjectFolder(active.id)}><FolderOpen size={16} /> Mở thư mục</button>}<button className="button button-primary" onClick={() => setProjectModal(true)}><Plus size={17} /> Dự án mới</button></div>}</section>
+      <section className="page-heading"><div>{page === 'problem' ? <nav className="page-breadcrumb" aria-label="Điều hướng"><button onClick={() => setPage('projects')}>Dự án</button><span>/</span><b aria-current="page">Soạn đề</b></nav> : <><div className="eyebrow">{!active && 'KHÔNG GIAN SOẠN ĐỀ'}</div><h1>{currentPage.title}</h1><p>{currentPage.subtitle}</p></>}</div>{page !== 'settings' && page !== 'problem' && <div className="heading-actions"><button className="button button-primary" onClick={() => setProjectModal(true)}><Plus size={17} /> Dự án mới</button></div>}</section>
       {compilerAvailable === false && page !== 'settings' && <button className="notice notice-warning" onClick={() => setPage('settings')}><TriangleAlert size={17} /><span><b>Chưa tìm thấy trình biên dịch C++.</b> Compiler C++ đi kèm chưa khởi động được. Hãy kiểm tra cài đặt hoặc chọn g++.exe khác.</span><ArrowRight size={15} /></button>}
       {page === 'problem' && active && <input ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={(event) => pickImage(event.target.files?.[0])} />}
       <div className={`page-body ${isWorkflowPage(page) && active ? 'workflow-page-body' : ''}`}>
@@ -665,7 +672,6 @@ function App() {
           </div>
         </div> : pageContent()}
       </div>
-      <footer className="app-footer"><span>CP Test Studio <span className="footer-sep">•</span> MVP 0.1</span><span><HardDrive size={13} /> Lưu ngoại tuyến <span className="footer-sep">•</span> {active ? active.tests.length : 0} testcase</span></footer>
     </main>
 
     {projectModal && <Modal title="Tạo dự án mới" subtitle="Mỗi dự án lưu đề bài, mã nguồn và testcase trong một thư mục riêng." close={() => setProjectModal(false)}><label className="field-label">Tên dự án</label><input autoFocus className="text-input" value={projectName} onChange={(event) => setProjectName(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && void createProject()} placeholder="Ví dụ: Bài toán dãy con tăng" /><div className="modal-actions"><button className="button button-secondary" onClick={() => setProjectModal(false)}>Hủy</button><button className="button button-primary" onClick={() => void createProject()}><Plus size={16} /> Tạo dự án</button></div></Modal>}
@@ -704,11 +710,21 @@ function LoadingOverlay({ busy, generationProgress, runProgress }: { busy: strin
 }
 
 function ProjectRow({ project, index, open, remove }: { project: Project; index: number; open: () => void; remove?: () => void }) {
-  return <div className="project-row"><button className={`project-monogram color-${index % 4}`} onClick={open}>{project.name.trim().charAt(0).toUpperCase() || 'P'}</button><button className="project-main" onClick={open}><b>{project.name}</b><small>Cập nhật {new Date(project.updatedAt).toLocaleDateString('vi-VN')} · {project.tests.length} testcase</small></button><span className="project-tag"><FileText size={12} /> {project.tests.length ? 'Đang làm' : 'Bản nháp'}</span><button className="icon-button row-arrow" onClick={open} title="Mở dự án"><ArrowRight size={16} /></button>{remove && <button className="icon-button danger-icon" onClick={remove} title="Xóa dự án"><Trash2 size={15} /></button>}</div>;
+  return <tr className="project-table-row" onClick={open} onKeyDown={(event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      open();
+    }
+  }} tabIndex={0} aria-label={`Mở dự án ${project.name}`}>
+    <td><span className="project-table-name"><span className={`project-monogram color-${index % 4}`}>{project.name.trim().charAt(0).toUpperCase() || 'P'}</span><b>{project.name}</b></span></td>
+    <td className="project-table-created">{new Date(project.createdAt).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
+    <td className="project-table-count">{project.tests.length}</td>
+    <td className="project-table-actions">{remove && <button className="icon-button danger-icon" onKeyDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); remove(); }} title="Xóa dự án" aria-label={`Xóa dự án ${project.name}`}><Trash2 size={15} /></button>}</td>
+  </tr>;
 }
 
 function Projects({ projects, openProject, create, remove }: { projects: Project[]; openProject: (p: Project) => void; create: () => void; remove: (p: Project) => void }) {
-  return <div className="panel project-list-panel"><div className="section-heading"><div><h3>Danh sách dự án</h3><p>{projects.length} dự án được lưu trong ứng dụng.</p></div><button className="button button-primary" onClick={create}><Plus size={16} /> Dự án mới</button></div>{projects.length ? <div className="project-list">{projects.map((project, index) => <ProjectRow key={project.id} project={project} index={index} open={() => openProject(project)} remove={() => remove(project)} />)}</div> : <EmptyProject create={create} />}</div>;
+  return <div className="panel project-list-panel">{projects.length ? <div className="project-table-wrap"><table className="project-table"><thead><tr><th>Dự án</th><th>Ngày tạo</th><th>Testcase</th><th aria-label="Thao tác" /></tr></thead><tbody>{projects.map((project, index) => <ProjectRow key={project.id} project={project} index={index} open={() => openProject(project)} remove={() => remove(project)} />)}</tbody></table></div> : <EmptyProject create={create} />}</div>;
 }
 
 function EmptyProject({ create }: { create: () => void }) { return <div className="empty-state"><div className="empty-icon large"><FolderOpen size={26} /></div><h3>Chưa mở dự án</h3><p>Tạo một dự án để bắt đầu nhập đề, viết mã và tạo testcase.</p><button className="button button-primary" onClick={create}><Plus size={16} /> Tạo dự án</button></div>; }
@@ -871,7 +887,7 @@ function Export({ project, busy, directory, exported, exportAgain }: { project: 
 function SettingsPage({ settings, hasKeys, aiKey, setAiKey, saveKey, update, busy, compilerAvailable, compilerName, test, removeKey, chooseCompiler }: { settings: Settings | null; hasKeys: Record<Provider, boolean>; aiKey: string; setAiKey: (key: string) => void; saveKey: (provider: Provider) => void; update: (settings: Settings) => void; busy: string; compilerAvailable: boolean; compilerName: string; test: () => void; removeKey: (provider: Provider) => void; chooseCompiler: () => void }) {
   const [provider, setProvider] = useState<Provider>('openai');
   if (!settings) return <div className="panel loading-settings"><LoaderCircle className="spin" /> Đang tải cài đặt…</div>;
-  return <div className="settings-layout"><div className="settings-column"><section className="panel settings-card"><div className="settings-title"><div className="settings-icon purple"><Sparkles size={18} /></div><div><h3>Trợ lý AI</h3><p>Ở các bước 2–4, AI tự chạy khi nội dung còn thiếu; tác vụ khác chỉ chạy khi bạn chọn.</p></div><span className="optional-tag">TÙY CHỌN</span></div><div className="provider-tabs"><button className={provider === 'openai' ? 'selected' : ''} onClick={() => setProvider('openai')}>OpenAI</button><button className={provider === 'gemini' ? 'selected' : ''} onClick={() => setProvider('gemini')}>Google Gemini</button></div><div className="settings-form-grid"><label><span>Model mặc định</span><input className="text-input" value={settings.models[provider]} onChange={(e) => update({ ...settings, models: { ...settings.models, [provider]: e.target.value } })} placeholder={provider === 'openai' ? 'gpt-4.1-mini' : 'gemini-2.5-flash'} /></label><label><span>Provider mặc định</span><select className="text-input" value={settings.provider} onChange={(e) => update({ ...settings, provider: e.target.value as Provider })}><option value="openai">OpenAI</option><option value="gemini">Google Gemini</option></select></label></div><label className="field-label api-label">API key {hasKeys[provider] && <span className="key-saved"><BadgeCheck size={13} /> Đã lưu an toàn</span>}</label><div className="api-key-row"><div className="input-with-button"><input className="text-input" type="password" value={aiKey} onChange={(e) => setAiKey(e.target.value)} placeholder={hasKeys[provider] ? 'Nhập key mới để thay thế' : 'Dán API key tại đây'} /><KeyRound size={16} /></div><button className="button button-primary" onClick={() => saveKey(provider)} disabled={busy === 'key'}><Save size={15} /> Lưu key</button></div><div className="security-note"><Shield size={15} /><span>Key được mã hóa bằng cơ chế bảo vệ thông tin của Windows; không lưu trong file dự án.</span></div><div className="settings-actions"><button className="button button-secondary button-small" onClick={test} disabled={!hasKeys[provider]}><Activity size={14} /> Kiểm tra kết nối</button>{hasKeys[provider] && <button className="button button-danger button-small" onClick={() => removeKey(provider)}><Trash2 size={14} /> Xóa key</button>}</div></section><section className="panel settings-card"><div className="settings-title"><div className="settings-icon blue"><Code2 size={18} /></div><div><h3>Compiler C++</h3><p>Ứng dụng dùng MinGW-w64 đi kèm; bạn có thể chọn compiler khác nếu cần.</p></div></div><div className="environment-row"><span className="env-indicator"><span className={`dot ${compilerAvailable ? 'green' : 'warn'}`}/></span><div><b>{compilerAvailable ? 'Đã tìm thấy compiler' : 'Chưa tìm thấy g++'}</b><small>{compilerName || settings.compilerPath || 'Compiler C++ đi kèm ứng dụng'}</small></div><button className="button button-secondary button-small" onClick={chooseCompiler}>Chọn g++.exe</button></div><div className="setup-hint"><b>Compiler đã đi kèm ứng dụng</b><span>Không cần cài MinGW-w64 hoặc sửa PATH của Windows. Bạn có thể chọn g++.exe khác nếu muốn.</span></div></section><section className="panel settings-card"><div className="settings-title"><div className="settings-icon orange"><FileText size={18} /></div><div><h3>Xuất tài liệu</h3><p>Ứng dụng dùng Pandoc và Typst đã đóng gói sẵn để xuất DOCX, PDF và công thức toán; người dùng không cần cài riêng.</p></div></div></section><section className="panel settings-card"><div className="settings-title"><div className="settings-icon orange"><Folder size={18} /></div><div><h3>Tên file Themis</h3><p>Thiết lập tên file input/output và tiền tố thư mục testcase.</p></div></div><div className="settings-form-grid themis-names"><label><span>Input</span><input className="text-input" value={settings.themisInputFile} onChange={(event) => update({ ...settings, themisInputFile: event.target.value })} placeholder="BAI.INP" /></label><label><span>Output</span><input className="text-input" value={settings.themisOutputFile} onChange={(event) => update({ ...settings, themisOutputFile: event.target.value })} placeholder="BAI.OUT" /></label><label><span>Tiền tố TEST</span><input className="text-input" value={settings.themisTestPrefix} onChange={(event) => update({ ...settings, themisTestPrefix: event.target.value })} placeholder="TEST" /></label></div></section></div><aside className="settings-aside"><div className="panel privacy-card"><div className="privacy-lock"><Shield size={22} /></div><h3>Riêng tư theo mặc định</h3><p>Đề bài, source code, testcase và output được lưu cục bộ trong hồ sơ người dùng Windows.</p><div className="privacy-rule"><Check size={15} /> Không cần đăng nhập</div><div className="privacy-rule"><Check size={15} /> Không có backend cloud</div><div className="privacy-rule"><Check size={15} /> AI chỉ chạy theo yêu cầu</div></div><div className="panel theme-card"><div className="settings-title"><div className="settings-icon gray"><Sun size={17} /></div><div><h3>Giao diện</h3><p>Sáng hoặc tối.</p></div></div><div className="theme-options"><button className={settings.theme === 'light' ? 'selected' : ''} onClick={() => update({ ...settings, theme: 'light' })}><Sun size={16} /> Sáng</button><button className={settings.theme === 'dark' ? 'selected' : ''} onClick={() => update({ ...settings, theme: 'dark' })}><Moon size={16} /> Tối</button></div></div><div className="version-card"><Github size={15} /><span>CP Test Studio</span><b>0.1.0 MVP</b></div></aside></div>;
+  return <div className="settings-layout"><div className="settings-column"><section className="panel settings-card"><div className="settings-title"><div className="settings-icon purple"><Sparkles size={18} /></div><div><h3>Trợ lý AI</h3><p>Ở các bước 2–4, AI tự chạy khi nội dung còn thiếu; tác vụ khác chỉ chạy khi bạn chọn.</p></div><span className="optional-tag">TÙY CHỌN</span></div><div className="provider-tabs"><button className={provider === 'openai' ? 'selected' : ''} onClick={() => setProvider('openai')}>OpenAI</button><button className={provider === 'gemini' ? 'selected' : ''} onClick={() => setProvider('gemini')}>Google Gemini</button></div><div className="settings-form-grid"><label><span>Model mặc định</span><input className="text-input" value={settings.models[provider]} onChange={(e) => update({ ...settings, models: { ...settings.models, [provider]: e.target.value } })} placeholder={provider === 'openai' ? 'gpt-4.1-mini' : 'gemini-2.5-flash'} /></label><label><span>Provider mặc định</span><select className="text-input" value={settings.provider} onChange={(e) => update({ ...settings, provider: e.target.value as Provider })}><option value="openai">OpenAI</option><option value="gemini">Google Gemini</option></select></label></div><label className="field-label api-label">API key {hasKeys[provider] && <span className="key-saved"><BadgeCheck size={13} /> Đã lưu an toàn</span>}</label><div className="api-key-row"><div className="input-with-button"><input className="text-input" type="password" value={aiKey} onChange={(e) => setAiKey(e.target.value)} placeholder={hasKeys[provider] ? 'Nhập key mới để thay thế' : 'Dán API key tại đây'} /><KeyRound size={16} /></div><button className="button button-primary" onClick={() => saveKey(provider)} disabled={busy === 'key'}><Save size={15} /> Lưu key</button></div><div className="security-note"><Shield size={15} /><span>Key được mã hóa bằng cơ chế bảo vệ thông tin của Windows; không lưu trong file dự án.</span></div><div className="settings-actions"><button className="button button-secondary button-small" onClick={test} disabled={!hasKeys[provider]}><Activity size={14} /> Kiểm tra kết nối</button>{hasKeys[provider] && <button className="button button-danger button-small" onClick={() => removeKey(provider)}><Trash2 size={14} /> Xóa key</button>}</div></section><section className="panel settings-card"><div className="settings-title"><div className="settings-icon blue"><Code2 size={18} /></div><div><h3>Compiler C++</h3><p>Ứng dụng dùng MinGW-w64 đi kèm; bạn có thể chọn compiler khác nếu cần.</p></div></div><div className="environment-row"><span className="env-indicator"><span className={`dot ${compilerAvailable ? 'green' : 'warn'}`}/></span><div><b>{compilerAvailable ? 'Đã tìm thấy compiler' : 'Chưa tìm thấy g++'}</b><small>{compilerName || settings.compilerPath || 'Compiler C++ đi kèm ứng dụng'}</small></div><button className="button button-secondary button-small" onClick={chooseCompiler}>Chọn g++.exe</button></div><div className="setup-hint"><b>Compiler đã đi kèm ứng dụng</b><span>Không cần cài MinGW-w64 hoặc sửa PATH của Windows. Bạn có thể chọn g++.exe khác nếu muốn.</span></div></section><section className="panel settings-card"><div className="settings-title"><div className="settings-icon orange"><FileText size={18} /></div><div><h3>Xuất tài liệu</h3><p>Ứng dụng dùng Pandoc và Typst đã đóng gói sẵn để xuất DOCX, PDF và công thức toán; người dùng không cần cài riêng.</p></div></div></section><section className="panel settings-card"><div className="settings-title"><div className="settings-icon orange"><Folder size={18} /></div><div><h3>Tên file Themis</h3><p>Thiết lập tên file input/output và tiền tố thư mục testcase.</p></div></div><div className="settings-form-grid themis-names"><label><span>Input</span><input className="text-input" value={settings.themisInputFile} onChange={(event) => update({ ...settings, themisInputFile: event.target.value })} placeholder="BAI.INP" /></label><label><span>Output</span><input className="text-input" value={settings.themisOutputFile} onChange={(event) => update({ ...settings, themisOutputFile: event.target.value })} placeholder="BAI.OUT" /></label><label><span>Tiền tố TEST</span><input className="text-input" value={settings.themisTestPrefix} onChange={(event) => update({ ...settings, themisTestPrefix: event.target.value })} placeholder="TEST" /></label></div></section></div></div>;
 }
 
 function Modal({ title, subtitle, close, children, wide = false }: { title: string; subtitle: string; close: () => void; children: React.ReactNode; wide?: boolean }) { return <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && close()}><div className={`modal ${wide ? 'modal-wide' : ''}`}><button className="icon-button modal-close" onClick={close}><X size={17} /></button><div className="modal-heading"><div className="brand-mark small-mark"><Command size={16} /></div><div><h2>{title}</h2><p>{subtitle}</p></div></div>{children}</div></div>; }
