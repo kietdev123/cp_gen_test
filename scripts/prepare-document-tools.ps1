@@ -24,13 +24,19 @@ function Get-VerifiedFile([string]$url, [string]$filePath, [string]$expectedHash
         $currentHash = (Get-FileHash -LiteralPath $filePath -Algorithm SHA256).Hash.ToLowerInvariant()
         if ($currentHash -eq $expectedHash) { return }
     }
-    $curl = Get-Command 'curl.exe' -ErrorAction SilentlyContinue
-    if ($curl) {
-        & $curl.Source --fail --location --retry 3 --retry-delay 2 --output $filePath $url
-        if ($LASTEXITCODE -ne 0) { throw "Download failed with curl exit code ${LASTEXITCODE}: $url" }
+    $cachedDownload = if ($env:CP_STUDIO_DOWNLOADS) { Join-Path $env:CP_STUDIO_DOWNLOADS ([IO.Path]::GetFileName($filePath)) } else { $null }
+    if ($cachedDownload -and (Test-Path -LiteralPath $cachedDownload -PathType Leaf)) {
+        Copy-Item -LiteralPath $cachedDownload -Destination $filePath -Force
     }
     else {
-        Invoke-WebRequest -Uri $url -OutFile $filePath
+        $curl = Get-Command 'curl.exe' -ErrorAction SilentlyContinue
+        if ($curl) {
+            & $curl.Source --fail --location --retry 3 --retry-delay 2 --output $filePath $url
+            if ($LASTEXITCODE -ne 0) { throw "Download failed with curl exit code ${LASTEXITCODE}: $url" }
+        }
+        else {
+            Invoke-WebRequest -Uri $url -OutFile $filePath
+        }
     }
     $actualHash = (Get-FileHash -LiteralPath $filePath -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($actualHash -ne $expectedHash) { throw "SHA256 mismatch for $url. Expected $expectedHash, received $actualHash." }

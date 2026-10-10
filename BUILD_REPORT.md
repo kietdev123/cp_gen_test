@@ -68,3 +68,12 @@ Ngày build: 2026-10-08
 - `npm.cmd run build` và electron-builder MSI — **exit code 0**.
 - MSI mới: `release/CP-Test-Studio-0.1.0-win-x64.msi` (392,120,362 bytes), SHA-256 `CB05DCA4C8D40D6876C135DA01A244EA1FC8C2D85F599F40959EFF950401DC3F`.
 - Chưa cài MSI mới trên máy nhận; kiểm thử chức năng sinh testcase trên máy đó vẫn cần xác nhận.
+
+## Follow-up — tách công cụ ngoài và rút gọn MSI
+
+- MSI/ZIP không còn gọi bước tải MinGW, Pandoc, Typst và Roboto; các tài nguyên này bị bỏ khỏi `extraResources`. Bản MSI cần chọn `g++.exe` và thư mục `document-export` trong Cài đặt sau khi tải/giải nén.
+- Các thư viện chỉ dùng trong renderer được chuyển sang `devDependencies`; runtime chỉ còn các gói được main process sử dụng. `app.asar` giảm từ khoảng 211 MB xuống 61 MB.
+- Thêm `documentToolsPath` trong Settings và IPC chọn thư mục. Script chuẩn bị công cụ dùng thư mục cache `CP_STUDIO_DOWNLOADS`, cho phép tải trước các archive và tạo `.tools/document-export`.
+- `npm.cmd run typecheck` — **exit code 0**.
+- `npm.cmd run dist:win:installer` — **exit code 0**; MSI mới: `release/CP-Test-Studio-0.1.0-win-x64.msi` (115,757,056 bytes), SHA-256 `359EF08507914AFE6DF8A37739EB4B484EC4EA7D118158EA6812214F00279785`.
+- Không chạy functional/E2E tests hoặc cài MSI trên máy khác.

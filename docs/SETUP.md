@@ -13,9 +13,9 @@ Gói ZIP portable vẫn được tạo bằng `npm run dist:win` nếu không mu
 
 - Windows 10/11 64-bit.
 - Node.js 22 trở lên và npm.
-- MinGW-w64 được chuẩn bị tự động khi chạy source và được đóng gói cùng app Windows; người cài app không cần cài riêng compiler.
+- GCC/MinGW-w64 được tải riêng, không nằm trong MSI. Chọn `g++.exe` sau khi giải nén tại **Cài đặt → Compiler C++**.
 - Testlib `testlib.h` và license được lưu trong source, đóng gói cùng ứng dụng; generator không cần tải thư viện lúc chạy.
-- Pandoc, Typst và Roboto được tải tự động khi chạy source; ứng dụng MSI đóng gói sẵn các công cụ này.
+- Pandoc, Typst và Roboto được tải riêng, không nằm trong MSI. Chọn thư mục `document-export` đã chuẩn bị tại **Cài đặt → Xuất tài liệu**.
 - API key OpenAI hoặc Google Gemini là tùy chọn, chỉ cần cho chức năng AI.
 
 ```powershell
@@ -50,9 +50,7 @@ Installer mở wizard cài đặt, cài theo tài khoản Windows hiện tại v
 
 ## Compiler C++
 
-App Windows đi kèm MinGW-w64. Khi chạy từ source, `npm run dev` tự tải bản compiler cố định vào `.tools/` (thư mục này không được đưa vào Git) và xác minh SHA-256 trước khi giải nén. Lệnh tạo gói Windows cũng chuẩn bị compiler tự động.
-
-Nếu compiler đi kèm không khởi động được, có thể chọn một `g++.exe` khác trong **Cài đặt → Compiler C++**. App chỉ thêm thư mục compiler vào `PATH` của tiến trình biên dịch/chạy, không sửa PATH của Windows.
+Tải GCC x64 từ [docs/EXTERNAL_TOOLS.md](EXTERNAL_TOOLS.md), giải nén toàn bộ ZIP rồi chọn `mingw64\bin\g++.exe` trong **Cài đặt → Compiler C++**. Giữ nguyên cấu trúc thư mục để GCC tìm được linker và thư viện. App chỉ thêm đường dẫn cho tiến trình con, không sửa PATH của Windows.
 
 Compiler cần hỗ trợ `-std=c++17`. Project compile vào thư mục build của ứng dụng; source gốc vẫn nằm trong thư mục dự án.
 
@@ -64,4 +62,4 @@ Key và nội dung dự án không được ghi vào log ứng dụng. Tác vụ
 
 ## Xuất tài liệu
 
-Khi chạy source, `npm run dev` tự tải các bản Pandoc/Typst cố định và kiểm tra SHA-256, sau đó lưu trong `.tools/document-export/`. Tệp này không được đưa vào Git. Khi tạo ZIP/MSI, electron-builder chép chúng vào tài nguyên ứng dụng; người dùng cuối không cần cài Pandoc, Typst hoặc font Roboto. DOCX dùng template Word và PDF dùng Typst để hiển thị công thức TeX.
+Tải các thành phần từ [docs/EXTERNAL_TOOLS.md](EXTERNAL_TOOLS.md), chạy script chuẩn bị để tạo `.tools/document-export/`, rồi trong ứng dụng chọn thư mục này tại **Cài đặt → Xuất tài liệu**. DOCX dùng template Word và PDF dùng Typst để hiển thị công thức TeX.

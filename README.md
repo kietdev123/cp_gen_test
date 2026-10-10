@@ -20,15 +20,11 @@ npm.cmd run typecheck
 npm.cmd run dist:win
 ```
 
-`npm run dist:win` tạo gói ZIP Windows x64; `npm run dist:win:installer` tạo một file MSI trong `release/`. Cả hai lệnh biên dịch mã nguồn mới nhất, rồi chuẩn bị MinGW-w64, Pandoc, Typst và Roboto trước khi đóng gói.
+`npm.cmd run dist:win` tạo ZIP Windows x64; `npm.cmd run dist:win:installer` tạo MSI trong `release/`. Hai lệnh chỉ build ứng dụng và đóng gói; chúng không tải hay nhúng GCC/Pandoc/Typst nên thời gian build và dung lượng MSI giảm đáng kể. Compiler và công cụ xuất tài liệu được tải riêng, xem [docs/EXTERNAL_TOOLS.md](docs/EXTERNAL_TOOLS.md).
 
-Để build lại MSI từ mã nguồn mới nhất, mở PowerShell tại thư mục project (cài thư viện bằng `npm install` nếu đây là lần đầu) và chạy:
+Để build MSI từ mã nguồn mới nhất, mở PowerShell tại thư mục project (cài thư viện bằng `npm.cmd install` nếu đây là lần đầu) và chạy:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\prepare-mingw.ps1
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\prepare-document-tools.ps1
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 npm.cmd run build
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 .\node_modules\.bin\electron-builder.cmd --win msi --x64
@@ -36,7 +32,7 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 File kết quả có dạng `release/CP-Test-Studio-<version>-win-x64.msi`.
 
-Hướng dẫn chi tiết ở [docs/SETUP.md](docs/SETUP.md), thao tác ở [docs/USER_GUIDE.md](docs/USER_GUIDE.md), checklist thủ công ở [docs/MANUAL_TEST.md](docs/MANUAL_TEST.md).
+Hướng dẫn chi tiết ở [docs/SETUP.md](docs/SETUP.md), tải công cụ riêng ở [docs/EXTERNAL_TOOLS.md](docs/EXTERNAL_TOOLS.md), thao tác ở [docs/USER_GUIDE.md](docs/USER_GUIDE.md), checklist thủ công ở [docs/MANUAL_TEST.md](docs/MANUAL_TEST.md).
 
 ## Chức năng hiện có
 

@@ -135,6 +135,7 @@ export interface Settings {
   provider: Provider;
   models: Record<Provider, string>;
   compilerPath: string;
+  documentToolsPath: string;
   theme: 'light' | 'dark';
   themisInputFile: string;
   themisOutputFile: string;
@@ -183,6 +184,7 @@ export interface AppApi {
   testAiConnection(request: AiRequest): Promise<string>;
   askAi(request: AiRequest): Promise<AiResponse>;
   chooseCompiler(): Promise<string | null>;
+  chooseDocumentTools(): Promise<string | null>;
   compile(projectId: string, kind: ProgramKind, source: string): Promise<CompileResult>;
   run(projectId: string, kind: ProgramKind, input: string, args?: string[], timeoutMs?: number): Promise<RunResult>;
   generateTests(projectId: string, plan: TestPlan, seed: number, source: string, validator: string, statementVersion: string, excludedHashes?: string[]): Promise<TestGenerationResult>;

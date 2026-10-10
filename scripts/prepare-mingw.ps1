@@ -15,6 +15,7 @@ if (Test-Path -LiteralPath $compilerPath -PathType Leaf) {
 }
 
 $downloadUrl = 'https://github.com/brechtsanders/winlibs_mingw/releases/download/16.1.0posix-14.0.0-ucrt-r2/winlibs-x86_64-posix-seh-gcc-16.1.0-mingw-w64ucrt-14.0.0-r2.zip'
+$downloadName = 'winlibs-x86_64-posix-seh-gcc-16.1.0-mingw-w64ucrt-14.0.0-r2.zip'
 $expectedSha256 = '78eff1e2e804b6a6320c713f084b8f820c662104a24cea6a3bfcab82032bdd60'
 $id = [Guid]::NewGuid().ToString('N')
 $archivePath = Join-Path $toolsRoot "mingw-$id.zip"
@@ -24,16 +25,23 @@ $backupRoot = Join-Path $toolsRoot "mingw-previous-$id"
 New-Item -ItemType Directory -Path $toolsRoot -Force | Out-Null
 
 try {
-    Write-Output 'Downloading the bundled MinGW-w64 compiler (about 274 MB)...'
-    $curl = Get-Command 'curl.exe' -ErrorAction SilentlyContinue
-    if ($curl) {
-        & $curl.Source --fail --location --retry 3 --retry-delay 2 --output $archivePath $downloadUrl
-        if ($LASTEXITCODE -ne 0) {
-            throw "MinGW-w64 download failed with curl exit code $LASTEXITCODE."
-        }
+    $cachedDownload = if ($env:CP_STUDIO_DOWNLOADS) { Join-Path $env:CP_STUDIO_DOWNLOADS $downloadName } else { $null }
+    if ($cachedDownload -and (Test-Path -LiteralPath $cachedDownload -PathType Leaf)) {
+        Write-Output "Using cached MinGW-w64 archive: $cachedDownload"
+        Copy-Item -LiteralPath $cachedDownload -Destination $archivePath -Force
     }
     else {
-        Invoke-WebRequest -Uri $downloadUrl -OutFile $archivePath
+        Write-Output 'Downloading the MinGW-w64 compiler (about 274 MB)...'
+        $curl = Get-Command 'curl.exe' -ErrorAction SilentlyContinue
+        if ($curl) {
+            & $curl.Source --fail --location --retry 3 --retry-delay 2 --output $archivePath $downloadUrl
+            if ($LASTEXITCODE -ne 0) {
+                throw "MinGW-w64 download failed with curl exit code $LASTEXITCODE."
+            }
+        }
+        else {
+            Invoke-WebRequest -Uri $downloadUrl -OutFile $archivePath
+        }
     }
 
     $actualSha256 = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()

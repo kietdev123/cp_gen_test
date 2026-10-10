@@ -16,7 +16,7 @@ const DEFAULT_SETTINGS: Settings = {
   onboardingComplete: false,
   provider: 'openai',
   models: { openai: 'gpt-4.1-mini', gemini: 'gemini-2.5-flash' },
-  compilerPath: '', theme: 'light', themisInputFile: 'BAI.INP', themisOutputFile: 'BAI.OUT',
+  compilerPath: '', documentToolsPath: '', theme: 'light', themisInputFile: 'BAI.INP', themisOutputFile: 'BAI.OUT',
 };
 const DEFAULT_GENERATOR = DEFAULT_GENERATOR_TEMPLATE;
 const DEFAULT_SOLUTION = `#include <bits/stdc++.h>
@@ -403,6 +403,10 @@ ipcMain.handle('settings:compiler:choose', async () => {
   const result = await dialog.showOpenDialog(mainWindow!, { title: 'Chọn trình biên dịch C++', filters: [{ name: 'Ứng dụng', extensions: ['exe'] }], properties: ['openFile'] });
   return result.canceled ? null : result.filePaths[0];
 });
+ipcMain.handle('settings:document-tools:choose', async () => {
+  const result = await dialog.showOpenDialog(mainWindow!, { title: 'Chọn thư mục công cụ xuất tài liệu', properties: ['openDirectory'] });
+  return result.canceled ? null : result.filePaths[0];
+});
 ipcMain.handle('ai:test', async (_event, request: AiRequest) => (await callAi({ ...request, prompt: AI_PROMPTS.connectionTest }, true)).text);
 ipcMain.handle('ai:ask', async (_event, request: AiRequest): Promise<AiResponse> => {
   const settings = await readSettings();
@@ -663,21 +667,18 @@ async function createDocx(project: Project): Promise<Buffer> {
   return convertMarkdown(project, 'docx');
 }
 
-function documentToolsRoot(): string {
-  return app.isPackaged
-    ? path.join(process.resourcesPath, 'tools', 'document-export')
-    : path.join(app.getAppPath(), '.tools', 'document-export');
-}
-
 async function convertMarkdown(project: Project, format: 'pdf' | 'docx'): Promise<Buffer> {
-  const root = documentToolsRoot();
+  const settings = await readSettings();
+  const root = settings.documentToolsPath?.trim() || (app.isPackaged
+    ? path.join(process.resourcesPath, 'tools', 'document-export')
+    : path.join(app.getAppPath(), '.tools', 'document-export'));
   const pandoc = path.join(root, process.platform === 'win32' ? 'pandoc.exe' : 'pandoc');
   const typst = path.join(root, process.platform === 'win32' ? 'typst.exe' : 'typst');
   const fontDirectory = path.join(root, 'fonts');
   const referenceDoc = path.join(root, 'reference.docx');
   const filter = path.join(root, 'pandoc-normalize.lua');
   if (!existsSync(pandoc) || !existsSync(referenceDoc) || !existsSync(filter) || (format === 'pdf' && (!existsSync(typst) || !existsSync(path.join(fontDirectory, 'Roboto.ttf'))))) {
-    throw new Error('Thiếu bộ chuyển đổi tài liệu đi kèm. Hãy chạy: node .tools/npm/bin/npm-cli.js run prepare:document-tools');
+    throw new Error('Chưa tìm thấy công cụ xuất tài liệu. Hãy tải bộ Pandoc/Typst, giải nén thư mục document-export rồi chọn thư mục đó trong Cài đặt → Xuất tài liệu.');
   }
 
   const workingDirectory = await fs.mkdtemp(path.join(app.getPath('temp'), 'cp-test-studio-export-'));
