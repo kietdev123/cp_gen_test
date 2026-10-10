@@ -2,7 +2,7 @@
 
 ## Dùng ứng dụng Windows
 
-1. Chạy file `CP-Test-Studio-0.1.0-win-x64.msi` và hoàn tất cài đặt.
+1. Chạy file `CP-Test-Studio-1.0.0-win-x64.msi` và hoàn tất cài đặt.
 2. Mở CP Test Studio từ Start hoặc shortcut trên Desktop.
 3. Có thể bỏ qua API AI ở màn hình chào mừng. Ứng dụng mở được khi chưa có API key.
 4. Dự án và dữ liệu được lưu cục bộ trong thư mục user data của Electron. Dùng nút **Mở thư mục** trong dự án để xem tệp trên máy.
