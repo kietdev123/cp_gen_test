@@ -19,9 +19,16 @@ $downloadRoot = Join-Path $toolsRoot "document-export-download-$id"
 
 New-Item -ItemType Directory -Path $exportRoot, $fontRoot, $stagingRoot, $downloadRoot -Force | Out-Null
 
+function Get-Sha256([string]$filePath) {
+    $stream = [System.IO.File]::OpenRead($filePath)
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    try { return ([BitConverter]::ToString($sha256.ComputeHash($stream))).Replace('-', '').ToLowerInvariant() }
+    finally { $sha256.Dispose(); $stream.Dispose() }
+}
+
 function Get-VerifiedFile([string]$url, [string]$filePath, [string]$expectedHash) {
     if (Test-Path -LiteralPath $filePath -PathType Leaf) {
-        $currentHash = (Get-FileHash -LiteralPath $filePath -Algorithm SHA256).Hash.ToLowerInvariant()
+        $currentHash = Get-Sha256 $filePath
         if ($currentHash -eq $expectedHash) { return }
     }
     $cachedDownload = if ($env:CP_STUDIO_DOWNLOADS) { Join-Path $env:CP_STUDIO_DOWNLOADS ([IO.Path]::GetFileName($filePath)) } else { $null }
@@ -38,7 +45,7 @@ function Get-VerifiedFile([string]$url, [string]$filePath, [string]$expectedHash
             Invoke-WebRequest -Uri $url -OutFile $filePath
         }
     }
-    $actualHash = (Get-FileHash -LiteralPath $filePath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $actualHash = Get-Sha256 $filePath
     if ($actualHash -ne $expectedHash) { throw "SHA256 mismatch for $url. Expected $expectedHash, received $actualHash." }
 }
 
@@ -122,7 +129,7 @@ try {
         Copy-Item -LiteralPath $foundTypst.FullName -Destination $typstExe -Force
     }
 
-    if (-not (Test-Path -LiteralPath $fontFile -PathType Leaf) -or (Get-FileHash -LiteralPath $fontFile -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expectedRobotoSha256) {
+    if (-not (Test-Path -LiteralPath $fontFile -PathType Leaf) -or (Get-Sha256 $fontFile) -ne $expectedRobotoSha256) {
         Get-VerifiedFile 'https://raw.githubusercontent.com/google/fonts/5e8a3ba899557829a76cfdac30fa512bda91d7ca/ofl/roboto/Roboto%5Bwdth%2Cwght%5D.ttf' $fontFile $expectedRobotoSha256
     }
     Get-VerifiedFile 'https://raw.githubusercontent.com/google/fonts/5e8a3ba899557829a76cfdac30fa512bda91d7ca/ofl/roboto/OFL.txt' (Join-Path $exportRoot 'ROBOTO-OFL.txt') '061402327a96aadb0bfb694a960ed289ecd38d383e396243831ab81feb109c41'
