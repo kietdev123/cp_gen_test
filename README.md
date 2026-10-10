@@ -7,8 +7,8 @@ CP Test Studio là ứng dụng desktop Windows bằng tiếng Việt để so�
 Yêu cầu Node.js 22 trở lên và npm:
 
 ```powershell
-npm install
-npm run dev
+npm.cmd install
+npm.cmd run dev
 ```
 
 Nếu `npm` chưa nằm trong `PATH` trên máy Windows này, chạy source bằng `node .tools/npm/bin/npm-cli.js run dev`.
@@ -16,12 +16,25 @@ Nếu `npm` chưa nằm trong `PATH` trên máy Windows này, chạy source bằ
 Kiểm tra và build bản production:
 
 ```powershell
-npm run typecheck
-npm run build
-npm run dist:win
+npm.cmd run typecheck
+npm.cmd run dist:win
 ```
 
-`npm run dist:win` tạo gói ZIP Windows x64 trong `release/`. `npm run dist:win:installer` tạo một file MSI. Cả hai lệnh tự chuẩn bị MinGW-w64, Pandoc, Typst và Roboto để người dùng chỉ cần cài ứng dụng.
+`npm run dist:win` tạo gói ZIP Windows x64; `npm run dist:win:installer` tạo một file MSI trong `release/`. Cả hai lệnh biên dịch mã nguồn mới nhất, rồi chuẩn bị MinGW-w64, Pandoc, Typst và Roboto trước khi đóng gói.
+
+Để build lại MSI từ mã nguồn mới nhất, mở PowerShell tại thư mục project (cài thư viện bằng `npm install` nếu đây là lần đầu) và chạy:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\prepare-mingw.ps1
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\prepare-document-tools.ps1
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+npm.cmd run build
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+.\node_modules\.bin\electron-builder.cmd --win msi --x64
+```
+
+File kết quả có dạng `release/CP-Test-Studio-<version>-win-x64.msi`.
 
 Hướng dẫn chi tiết ở [docs/SETUP.md](docs/SETUP.md), thao tác ở [docs/USER_GUIDE.md](docs/USER_GUIDE.md), checklist thủ công ở [docs/MANUAL_TEST.md](docs/MANUAL_TEST.md).
 
@@ -56,3 +69,6 @@ Hướng dẫn chi tiết ở [docs/SETUP.md](docs/SETUP.md), thao tác ở [doc
 
 Set-Location "C:\Users\Kiet Gay\Desktop\cp_gen_test"
 & "C:\Users\Kiet Gay\AppData\Local\Programs\nodejs-24.21.0\npm.cmd" run dev
+
+Set-Location "C:\Users\Kiet Gay\Desktop\cp_gen_test"
+& "C:\Users\Kiet Gay\AppData\Local\Programs\nodejs-24.21.0\npm.cmd" run dist:win:installer

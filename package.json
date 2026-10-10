@@ -12,8 +12,8 @@
     "prepare:document-tools": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-document-tools.ps1",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.main.json && tsc --noEmit -p tsconfig.preload.json",
     "build": "electron-vite build",
-    "dist:win": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-mingw.ps1 && powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-document-tools.ps1 && electron-builder --win zip --x64",
-    "dist:win:installer": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-mingw.ps1 && powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-document-tools.ps1 && electron-builder --win msi --x64"
+    "dist:win": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-mingw.ps1 && powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-document-tools.ps1 && npm run build && electron-builder --win zip --x64",
+    "dist:win:installer": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-mingw.ps1 && powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-document-tools.ps1 && npm run build && electron-builder --win msi --x64"
   },
   "dependencies": {
     "@fontsource/roboto": "^5.3.0",

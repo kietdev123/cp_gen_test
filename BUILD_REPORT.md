@@ -60,3 +60,11 @@ Ngày build: 2026-10-08
 - `npm run typecheck` — **exit code 0**.
 - `npm run build` — **exit code 0**; main, preload và renderer bundle thành công. Rollup vẫn cảnh báo hai annotation comment từ Zod và tự bỏ các comment này.
 - Không gọi API AI hoặc chạy kiểm thử chức năng/E2E; checklist thủ công đã cập nhật tại [docs/MANUAL_TEST.md](docs/MANUAL_TEST.md).
+
+## Follow-up — MSI và GCC trong đường dẫn có dấu cách
+
+- MSI trước dùng WinLibs GCC 16.2.0; `ld.exe` tách đường dẫn tới `default-manifest.o` tại dấu cách trong `CP Test Studio`.
+- Script chuẩn bị toolchain hiện ghim WinLibs GCC 16.1.0 UCRT release 2, xác minh SHA-256 và thay toolchain cũ khi phiên bản không khớp. Báo cáo WinLibs có cùng lỗi với release 3 và ghi nhận release 2 chạy được từ `C:\Program Files`: https://github.com/brechtsanders/winlibs_mingw/issues/298
+- `npm.cmd run build` và electron-builder MSI — **exit code 0**.
+- MSI mới: `release/CP-Test-Studio-0.1.0-win-x64.msi` (392,120,362 bytes), SHA-256 `CB05DCA4C8D40D6876C135DA01A244EA1FC8C2D85F599F40959EFF950401DC3F`.
+- Chưa cài MSI mới trên máy nhận; kiểm thử chức năng sinh testcase trên máy đó vẫn cần xác nhận.

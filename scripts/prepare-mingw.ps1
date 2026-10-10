@@ -4,17 +4,22 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $toolsRoot = Join-Path $repoRoot '.tools'
 $toolchainRoot = Join-Path $toolsRoot 'mingw64'
 $compilerPath = Join-Path $toolchainRoot 'bin\g++.exe'
+$expectedGccVersion = '16.1.0'
 
 if (Test-Path -LiteralPath $compilerPath -PathType Leaf) {
-    Write-Output "MinGW-w64 is ready: $compilerPath"
-    exit 0
+    $currentVersion = (& $compilerPath --version 2>$null | Select-Object -First 1) -join ''
+    if ($currentVersion -match [regex]::Escape($expectedGccVersion)) {
+        Write-Output "MinGW-w64 $expectedGccVersion is ready: $compilerPath"
+        exit 0
+    }
 }
 
-$downloadUrl = 'https://github.com/brechtsanders/winlibs_mingw/releases/download/16.2.0posix-14.0.0-ucrt-r2/winlibs-x86_64-posix-seh-gcc-16.2.0-mingw-w64ucrt-14.0.0-r2.zip'
-$expectedSha256 = 'd5dbafc4a170e762ca6143151ec918fb9e2c72736fb14cd704abebc6bdd5276a'
+$downloadUrl = 'https://github.com/brechtsanders/winlibs_mingw/releases/download/16.1.0posix-14.0.0-ucrt-r2/winlibs-x86_64-posix-seh-gcc-16.1.0-mingw-w64ucrt-14.0.0-r2.zip'
+$expectedSha256 = '78eff1e2e804b6a6320c713f084b8f820c662104a24cea6a3bfcab82032bdd60'
 $id = [Guid]::NewGuid().ToString('N')
 $archivePath = Join-Path $toolsRoot "mingw-$id.zip"
 $stagingRoot = Join-Path $toolsRoot "mingw-stage-$id"
+$backupRoot = Join-Path $toolsRoot "mingw-previous-$id"
 
 New-Item -ItemType Directory -Path $toolsRoot -Force | Out-Null
 
@@ -46,16 +51,42 @@ try {
         throw 'The MinGW-w64 archive did not contain mingw64\bin\g++.exe.'
     }
 
-    if (Test-Path -LiteralPath $toolchainRoot) {
-        $stalePath = Join-Path $toolsRoot "mingw-incomplete-$id"
-        Move-Item -LiteralPath $toolchainRoot -Destination $stalePath
+    $stagedVersionOutput = & $stagedCompiler --version 2>&1
+    $stagedVersionExitCode = $LASTEXITCODE
+    $stagedVersion = ($stagedVersionOutput -join "`n")
+    if ($stagedVersionExitCode -ne 0 -or $stagedVersion -notmatch [regex]::Escape($expectedGccVersion)) {
+        throw "The downloaded MinGW-w64 compiler is not GCC $expectedGccVersion."
     }
-    Move-Item -LiteralPath $stagedToolchain -Destination $toolchainRoot
 
-    if (-not (Test-Path -LiteralPath $compilerPath -PathType Leaf)) {
-        throw 'MinGW-w64 extraction completed, but g++.exe is missing.'
+    try {
+        if (Test-Path -LiteralPath $toolchainRoot) {
+            Move-Item -LiteralPath $toolchainRoot -Destination $backupRoot
+        }
+        Move-Item -LiteralPath $stagedToolchain -Destination $toolchainRoot
+
+        if (-not (Test-Path -LiteralPath $compilerPath -PathType Leaf)) {
+            throw 'MinGW-w64 extraction completed, but g++.exe is missing.'
+        }
+        $installedVersionOutput = & $compilerPath --version 2>&1
+        $installedVersionExitCode = $LASTEXITCODE
+        $installedVersion = ($installedVersionOutput -join "`n")
+        if ($installedVersionExitCode -ne 0 -or $installedVersion -notmatch [regex]::Escape($expectedGccVersion)) {
+            throw "Installed MinGW-w64 compiler is not GCC $expectedGccVersion."
+        }
+        if (Test-Path -LiteralPath $backupRoot) {
+            Remove-Item -LiteralPath $backupRoot -Recurse -Force
+        }
     }
-    Write-Output "MinGW-w64 is ready: $compilerPath"
+    catch {
+        if (Test-Path -LiteralPath $toolchainRoot) {
+            Remove-Item -LiteralPath $toolchainRoot -Recurse -Force
+        }
+        if (Test-Path -LiteralPath $backupRoot) {
+            Move-Item -LiteralPath $backupRoot -Destination $toolchainRoot
+        }
+        throw
+    }
+    Write-Output "MinGW-w64 $expectedGccVersion is ready: $compilerPath"
 }
 finally {
     $toolsPrefix = [IO.Path]::GetFullPath($toolsRoot).TrimEnd('\') + '\'
