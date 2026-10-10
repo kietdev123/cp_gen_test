@@ -197,4 +197,5 @@ export interface AppApi {
   exportPdf(project: Project): Promise<string | null>;
   exportDocx(project: Project): Promise<string | null>;
   exportAll(project: Project): Promise<{ directory: string; files: string[] } | null>;
+  openDirectory(directory: string): Promise<void>;
 }

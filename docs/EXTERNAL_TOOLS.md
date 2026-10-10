@@ -21,7 +21,7 @@ $env:CP_STUDIO_DOWNLOADS = 'D:\CP-Studio-Downloads'
 npm.cmd run prepare:document-tools
 ```
 
-Script tạo `.tools/document-export/`; upload thư mục này lên Drive để người dùng tải và giải nén. Với GCC, chỉ cần tải ZIP, giữ nguyên cây thư mục khi giải nén, rồi chọn `mingw64\bin\g++.exe` trong ứng dụng. Nếu chuẩn bị từ source, `prepare:mingw` cũng dùng file GCC đã tải trước khi `CP_STUDIO_DOWNLOADS` trỏ tới thư mục chứa ZIP.
+Script tạo `.tools/document-export/`; upload thư mục này lên Drive để người dùng tải và giải nén. GCC không được tải hoặc chép vào source khi chạy dev/build. Tải ZIP GCC riêng, giải nén giữ nguyên cây thư mục, rồi import bằng cách chọn `mingw64\bin\g++.exe` tại **Cài đặt → Compiler C++**.
 
 ## Build MSI nhanh
 

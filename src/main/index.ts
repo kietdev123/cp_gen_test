@@ -40,14 +40,12 @@ const projectsRoot = () => path.join(app.getPath('userData'), 'projects');
 const buildRoot = () => path.join(app.getPath('userData'), 'build');
 const testlibRoot = () => app.isPackaged ? path.join(process.resourcesPath, 'testlib') : path.join(app.getAppPath(), 'vendor', 'testlib');
 let activeCompilerPath = '';
-let activeCompilerIsBundled = false;
-let cachedBundledRoot: string | null | undefined;
 
 function shortWindowsPath(value: string): string {
   if (process.platform !== 'win32') return value;
   try {
-    const result = spawnSync('cmd.exe', ['/d', '/c', 'for %I in ("%CP_STUDIO_TOOLCHAIN%") do @echo %~sI'], {
-      env: { ...process.env, CP_STUDIO_TOOLCHAIN: value }, encoding: 'utf8', windowsHide: true, windowsVerbatimArguments: true,
+    const result = spawnSync('cmd.exe', ['/d', '/c', 'for %I in ("%CP_STUDIO_COMPILER%") do @echo %~sI'], {
+      env: { ...process.env, CP_STUDIO_COMPILER: value }, encoding: 'utf8', windowsHide: true, windowsVerbatimArguments: true,
     });
     const shortPath = result.stdout?.trim().split(/\r?\n/).pop();
     if (result.status === 0 && shortPath && !shortPath.includes(' ')) return shortPath;
@@ -55,34 +53,15 @@ function shortWindowsPath(value: string): string {
   return value;
 }
 
-function bundledCompilerRoot(): string | undefined {
-  if (cachedBundledRoot !== undefined) return cachedBundledRoot ?? undefined;
-  const root = app.isPackaged
-    ? path.join(process.resourcesPath, 'toolchain', 'mingw64')
-    : path.join(app.getAppPath(), '.tools', 'mingw64');
-  if (!existsSync(path.join(root, 'bin', 'g++.exe'))) {
-    cachedBundledRoot = null;
-    return undefined;
-  }
-  cachedBundledRoot = shortWindowsPath(root);
-  return cachedBundledRoot;
-}
-
-function bundledCompilerBin(): string | undefined {
-  if (process.platform !== 'win32') return undefined;
-  const root = bundledCompilerRoot();
-  if (!root) return undefined;
-  const bin = path.join(root, 'bin');
-  return existsSync(path.join(bin, 'g++.exe')) ? bin : undefined;
-}
-
 function childEnvironment(): NodeJS.ProcessEnv {
   const env = { ...process.env };
   const pathKey = Object.keys(env).find((key) => key.toLowerCase() === 'path') ?? 'PATH';
-  const extraDirs = [activeCompilerPath ? path.dirname(activeCompilerPath) : '', bundledCompilerBin() ?? ''];
+  const extraDirs = [activeCompilerPath ? path.dirname(activeCompilerPath) : ''];
   env[pathKey] = [...new Set([...extraDirs, env[pathKey] ?? ''].filter(Boolean))].join(path.delimiter);
-  const bundledBin = activeCompilerIsBundled ? bundledCompilerBin() : undefined;
-  if (bundledBin) env.GCC_EXEC_PREFIX = `${path.join(path.dirname(bundledBin), 'lib', 'gcc')}${path.sep}`;
+  if (process.platform === 'win32' && activeCompilerPath) {
+    const compilerRoot = path.dirname(path.dirname(activeCompilerPath));
+    env.GCC_EXEC_PREFIX = `${path.join(compilerRoot, 'lib', 'gcc')}${path.sep}`;
+  }
   return env;
 }
 const safeId = (value: string) => /^[a-f0-9-]{8,64}$/i.test(value);
@@ -178,20 +157,22 @@ function runChild(command: string, args: string[], options: { cwd?: string; inpu
 
 async function compiler(): Promise<string> {
   const settings = await readSettings();
-  const bundledBin = bundledCompilerBin();
-  const candidates = [settings.compilerPath, bundledBin ? path.join(bundledBin, 'g++.exe') : '', ...((process.env.PATH ?? '').split(path.delimiter).map((part) => path.join(part, process.platform === 'win32' ? 'g++.exe' : 'g++')))];
-  for (const candidate of candidates) {
-    if (!candidate) continue;
-    if (existsSync(candidate)) {
-      const result = await runChild(candidate, ['--version'], { timeoutMs: 4000, outputLimit: 16_000 }).catch(() => null);
-      if (result?.exitCode === 0) {
-        activeCompilerPath = candidate;
-        activeCompilerIsBundled = bundledBin !== undefined && path.resolve(candidate).toLowerCase() === path.resolve(path.join(bundledBin, 'g++.exe')).toLowerCase();
-        return candidate;
-      }
-    }
+  const configuredPath = settings.compilerPath.trim();
+  if (!configuredPath) throw new Error('Chưa chọn compiler C++ bên ngoài. Hãy chọn g++.exe tại Cài đặt → Compiler C++.');
+  const applicationDirectory = `${path.resolve(app.getAppPath()).toLowerCase()}${path.sep}`;
+  const selectedPath = path.resolve(configuredPath).toLowerCase();
+  if (selectedPath.startsWith(applicationDirectory)) {
+    throw new Error('Compiler đã chọn đang nằm trong thư mục source/ứng dụng. Hãy chọn g++.exe từ bộ GCC đã import bên ngoài.');
   }
-  throw new Error('Không tìm thấy g++. Hãy cài lại ứng dụng hoặc chọn g++.exe trong Cài đặt.');
+  const executable = shortWindowsPath(configuredPath);
+  if (!existsSync(executable)) throw new Error(`Không tìm thấy compiler đã chọn: ${configuredPath}. Hãy chọn lại g++.exe trong Cài đặt.`);
+  const result = await runChild(executable, ['--version'], { timeoutMs: 4000, outputLimit: 16_000 }).catch(() => null);
+  if (result?.exitCode !== 0) {
+    const diagnostics = `${result?.stderr ?? ''}${result?.stdout ?? ''}`.trim();
+    throw new Error(`Không chạy được compiler đã chọn: ${configuredPath}.${diagnostics ? `\n${diagnostics}` : ''}`);
+  }
+  activeCompilerPath = executable;
+  return configuredPath;
 }
 
 async function compile(projectId: string, kind: ProgramKind, source: string): Promise<CompileResult> {
@@ -288,7 +269,7 @@ ipcMain.handle('app:status', async () => {
   const settings = await readSettings();
   try {
     const selectedCompiler = await compiler();
-    return { compilerAvailable: true, compiler: activeCompilerIsBundled ? 'MinGW-w64 đi kèm ứng dụng' : selectedCompiler, onboardingComplete: settings.onboardingComplete };
+    return { compilerAvailable: true, compiler: selectedCompiler, onboardingComplete: settings.onboardingComplete };
   }
   catch { return { compilerAvailable: false, compiler: '', onboardingComplete: settings.onboardingComplete }; }
 });
@@ -654,6 +635,15 @@ ipcMain.handle('export:all', async (_event, project: Project) => {
 });
 
 ipcMain.handle('projects:open-folder', async (_event, id: string) => shell.openPath(projectPath(id)));
+ipcMain.handle('export:open-directory', async (_event, rawDirectory: string) => {
+  const rawValue = String(rawDirectory ?? '').trim();
+  if (!rawValue) throw new Error('Chưa có thư mục đã xuất để mở.');
+  const directory = path.resolve(rawValue);
+  const info = await fs.stat(directory).catch(() => null);
+  if (!info?.isDirectory()) throw new Error('Không tìm thấy thư mục đã xuất.');
+  const error = await shell.openPath(directory);
+  if (error) throw new Error(error);
+});
 
 function safeFileName(value: string) {
   return value.replace(/[\\/:*?"<>|]/g, '_').trim().replace(/[. ]+$/g, '') || 'De-bai';

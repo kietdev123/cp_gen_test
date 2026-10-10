@@ -12,7 +12,7 @@ g++.exe: fatal error: cannot execute '.../collect2.exe': CreateProcess: No such 
 
 ## Nguyên nhân đã xác nhận trên máy gặp lỗi
 
-- `collect2.exe` có tồn tại trong toolchain MinGW-w64 đi kèm ứng dụng.
+- `collect2.exe` có tồn tại trong toolchain MinGW-w64 đã chọn ở **Cài đặt → Compiler C++**.
 - Nhật ký **CodeIntegrity/Operational** có sự kiện 3077 và 3033, cho biết Windows chặn file này do chính sách toàn vẹn mã.
 - Smart App Control đang ở chế độ **On**. Máy là máy cá nhân, không tham gia domain; tính năng này vẫn có thể bật trên máy cá nhân.
 - Giá trị registry trước đó là `2` (Evaluation), hiện là `1` (On). Điều này phù hợp với việc chuyển sang chế độ thực thi, nhưng nhật ký đã xem không xác định chính xác thời điểm chuyển.

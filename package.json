@@ -7,8 +7,7 @@
   "license": "MIT",
   "scripts": {
     "dev": "electron-vite dev",
-    "predev": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-mingw.ps1 && powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-document-tools.ps1",
-    "prepare:mingw": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-mingw.ps1",
+    "predev": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-document-tools.ps1",
     "prepare:document-tools": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-document-tools.ps1",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.main.json && tsc --noEmit -p tsconfig.preload.json",
     "build": "electron-vite build",

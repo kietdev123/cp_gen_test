@@ -39,6 +39,7 @@ CP Test Studio giúp soạn đề, tạo testcase bằng generator C++17, kiểm
 
 - Kiểm tra danh sách testcase đủ điều kiện rồi chọn xuất bộ đề.
 - Gói xuất gồm đề, file lời giải `.cpp` và ZIP testcase theo cấu trúc Themis. Tên file Themis lấy từ các trường đã đặt ở bước 1.
+- Sau khi xuất, chọn **Mở thư mục đã lưu** để mở thư mục chứa các tệp; chọn **Xuất lại** nếu muốn tạo lại bộ đề.
 
 ## Cài đặt và giao diện
 

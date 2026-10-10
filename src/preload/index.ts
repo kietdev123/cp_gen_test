@@ -39,6 +39,7 @@ const api: AppApi = {
   exportPdf: (project: Project) => ipcRenderer.invoke('export:pdf', project),
   exportDocx: (project: Project) => ipcRenderer.invoke('export:docx', project),
   exportAll: (project: Project) => ipcRenderer.invoke('export:all', project),
+  openDirectory: (directory: string) => ipcRenderer.invoke('export:open-directory', directory),
 };
 
 contextBridge.exposeInMainWorld('studio', api);

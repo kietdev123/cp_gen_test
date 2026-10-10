@@ -37,7 +37,7 @@ Checklist này dành cho người dùng kiểm tra ứng dụng sau khi build. K
 
 ## 4. Lỗi thường gặp
 
-- Compiler không chạy: kiểm tra compiler đi kèm hoặc đường dẫn `g++.exe` trong Cài đặt.
+- Compiler không chạy: kiểm tra đường dẫn `g++.exe` đã import tại **Cài đặt → Compiler C++**.
 - Generator treo/tạo output quá lớn: app dừng theo timeout/giới hạn output; xem stderr và sửa mã.
 - Không đủ test duy nhất: mở nhật ký; đổi seed, params hoặc thuật toán generator.
 - AI lỗi: kiểm tra provider, model, API key và kết nối. Sinh testcase, runner và export không cần AI.

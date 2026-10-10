@@ -14,6 +14,7 @@ Gói ZIP portable vẫn được tạo bằng `npm run dist:win` nếu không mu
 - Windows 10/11 64-bit.
 - Node.js 22 trở lên và npm.
 - GCC/MinGW-w64 được tải riêng, không nằm trong MSI. Chọn `g++.exe` sau khi giải nén tại **Cài đặt → Compiler C++**.
+- `npm run dev` không tải hoặc dùng GCC trong source; cần chọn bộ GCC bên ngoài ở cài đặt trước khi biên dịch.
 - Testlib `testlib.h` và license được lưu trong source, đóng gói cùng ứng dụng; generator không cần tải thư viện lúc chạy.
 - Pandoc, Typst và Roboto được tải riêng, không nằm trong MSI. Chọn thư mục `document-export` đã chuẩn bị tại **Cài đặt → Xuất tài liệu**.
 - API key OpenAI hoặc Google Gemini là tùy chọn, chỉ cần cho chức năng AI.
