@@ -22,7 +22,9 @@ Checklist này dành cho người dùng kiểm tra ứng dụng sau khi build. K
 - [ ] Sinh lặp cùng miền nhỏ: SHA-256 phát hiện trùng, app thử sinh bù tối đa 8 lần và cảnh báo nếu không đủ số input duy nhất.
 - [ ] Sinh lại một testcase: chỉ thay bản ghi được chọn, các testcase khác còn nguyên.
 - [ ] Sửa generator hoặc validator: testcase trước được giữ lại và đánh dấu input cũ.
-- [ ] Compile lỗi: xem diagnostics và có thể yêu cầu AI đề xuất sửa; mã được đưa vào editor để người dùng rà soát.
+- [ ] Compile lỗi khi biên dịch thủ công, sinh testcase hoặc sinh lại testcase: modal hỏi có muốn gửi mã và diagnostics cho AI sửa không; chọn **Để tôi tự sửa** đóng modal và giữ nguyên mã.
+- [ ] Chọn **Sửa bằng AI**: mã được cập nhật trong editor; compiler chạy lại; khi lỗi xảy ra trong lúc sinh testcase, app tiếp tục sinh testcase nếu compile thành công.
+- [ ] AI trả mã chưa sửa được hoặc compile vẫn lỗi: diagnostics mới được hiển thị và có thể tiếp tục sửa thủ công hoặc thử AI lại.
 
 ## 3. Lời giải, runner và export
 

@@ -1,3 +1,10 @@
+const testlibRandomApiGuidance = [
+  'Quy tắc API ngẫu nhiên của Testlib (áp dụng nghiêm ngặt): `rnd` là `random_t`, không phải Python `random` hay API của thư viện khác.',
+  'Dùng `rnd.next()` hoặc các overload `rnd.next(n)`, `rnd.next(from, to)` để sinh giá trị; dùng `rnd.any(container)` để chọn phần tử từ một container STL đã khai báo.',
+  'Ví dụ chọn ngẫu nhiên dấu: `int sign = rnd.next(0, 1) == 0 ? -1 : 1;`. Nếu chọn từ danh sách, hãy tạo `std::vector<T>` rõ ràng rồi gọi `rnd.any(vector)`; không truyền initializer list trực tiếp.',
+  'Không được gọi hoặc tự suy đoán `rnd.choice`, `rnd.randint`, `rnd.pick` hay phương thức không có trong `vendor/testlib/testlib.h`. Trước khi trả mã, rà soát từng lời gọi `rnd.` để chắc chắn tên hàm và kiểu đối số đúng với Testlib.',
+].join('\n');
+
 export const AI_PROMPTS = {
   imageToStatement:
     'Đọc và chuyển toàn bộ nội dung đề lập trình trong ảnh thành Markdown có thể chỉnh sửa. Giữ nguyên công thức dưới dạng LaTeX. Không tự suy đoán phần không rõ; ghi [không rõ] tại vị trí đó. Đồng thời đề xuất tên file Themis dựa trên tên bài trong đề. Tiền tố testcase Themis luôn cố định là TEST, không cần trả về trong JSON. Chỉ trả về một JSON hợp lệ theo cấu trúc {"statement":"Nội dung đề bằng Markdown","themisInputFile":"BAI.INP","themisOutputFile":"BAI.OUT"}. Tên file input/output dùng chung tên cơ sở, lần lượt có đuôi .INP và .OUT; dùng ký tự ASCII, không dấu.',
@@ -9,7 +16,11 @@ export const AI_PROMPTS = {
     'Phân tích đề lập trình thi đấu dưới đây và chỉ trả về một JSON hợp lệ theo cấu trúc: {"problemSpec":{"summary":"...","inputFormat":"...","outputFormat":"...","constraints":["..."]},"groups":[{"name":"...","description":"...","mode":"random|boundary|constructive|stress","count":1,"params":{"n_min":"1","n_max":"100"}}]}. Đề xuất nhóm test đa dạng, tổng count không vượt quá 100. Không tự bịa dữ kiện hay ràng buộc; nếu thiếu thông tin, ghi rõ trong summary/description và để params trống. Chỉ dùng tham số có thể truyền dưới dạng key=value cho generator. Đề bài:\n\n${statement}',
 
   generator:
-    'Viết generator C++17 hoàn chỉnh, độc lập, tạo đúng một input hợp lệ theo đề và Test Plan. Dùng `#include "testlib.h"`, gọi `registerGen(argc, argv, 1)`, đọc `testIndex` bằng `opt<int>("testIndex", 1)`, `mode` bằng `opt<std::string>("mode", "random")`, và tham số nhóm bằng `opt<T>("<tên_tham_số>", giá_trị_mặc_định)`. Gọi `suppressEnsureNoUnusedOpts()` sau khi đọc các tùy chọn vì Electron có thể truyền thêm tham số của nhóm. Seed được Electron truyền làm argv[1]; mỗi lần chạy là một testcase riêng. Hỗ trợ mode `random`, `boundary`, `constructive`, `stress`; dùng testIndex/mode/params phù hợp với nhóm. In duy nhất input ra stdout. Không tạo output đáp án, không tự quản lý vòng lặp nhiều testcase, không để TODO hay mã giả. Chỉ trả mã C++ trong một code block. Đề và Test Plan sẽ được cung cấp sau hướng dẫn này.',
+    [
+      'Viết generator C++17 hoàn chỉnh, độc lập, tạo đúng một input hợp lệ theo đề và Test Plan. Dùng `#include "testlib.h"`, gọi `registerGen(argc, argv, 1)`, đọc `testIndex` bằng `opt<int>("testIndex", 1)`, `mode` bằng `opt<std::string>("mode", "random")`, và tham số nhóm bằng `opt<T>("<tên_tham_số>", giá_trị_mặc_định)`. Gọi `suppressEnsureNoUnusedOpts()` sau khi đọc các tùy chọn vì Electron có thể truyền thêm tham số của nhóm. Seed được Electron truyền làm argv[1]; mỗi lần chạy là một testcase riêng. Hỗ trợ mode `random`, `boundary`, `constructive`, `stress`; dùng testIndex/mode/params phù hợp với nhóm.',
+      testlibRandomApiGuidance,
+      'In duy nhất input ra stdout. Không tạo output đáp án, không tự quản lý vòng lặp nhiều testcase, không để TODO hay mã giả. Chỉ trả mã C++ trong một code block. Đề và Test Plan sẽ được cung cấp sau hướng dẫn này.',
+    ].join('\n\n'),
 
   solution:
     'Viết lời giải tham khảo hoàn chỉnh, đúng theo đề và các ràng buộc. Mã phải dùng cú pháp GNU++98 để tương thích GCC 4.8.1 mặc định của Themis; mã này cũng phải biên dịch được như một chương trình C++17 trong CP Test Studio. Không yêu cầu cờ biên dịch riêng. Không dùng tính năng C++11 trở lên như range-based for, lambda, nullptr, initializer list, auto suy luận kiểu, std::string::back()/front(), stoi, to_string, emplace_back hoặc structured bindings. Khi lấy ký tự cuối chuỗi, kiểm tra chuỗi không rỗng rồi dùng s[s.size() - 1]. Dùng Test Plan và generator từ bước trước làm ngữ cảnh để bao phủ dữ liệu; đề bài là đặc tả ưu tiên nếu thông tin mâu thuẫn. Không để TODO hay mã giả. Chỉ trả về mã C++ trong một code block.',
@@ -18,12 +29,20 @@ export const AI_PROMPTS = {
     'Viết validator C++17 đọc một input từ stdin, kiểm tra đúng định dạng và mọi ràng buộc của đề. Thoát mã 0 nếu hợp lệ, mã khác 0 nếu không hợp lệ; ghi lý do ngắn vào stderr. Không sửa input, không sinh output đáp án, không để TODO hay mã giả. Chỉ trả mã C++ trong một code block.',
 
   codeFix:
-    'Sửa lỗi biên dịch trong mã C++17 dưới đây. Giữ nguyên thuật toán và ý định nếu có thể; chỉ sửa những gì cần thiết. Chỉ trả về mã C++ trong một code block.\n\nLỗi biên dịch:\n${diagnostics}\n\nMã nguồn:\n${source}',
+    [
+      'Sửa tất cả lỗi biên dịch được nêu trong diagnostics cho mã C++17 dưới đây. Giữ nguyên thuật toán, định dạng input/output và ý định của chương trình; chỉ sửa những gì cần thiết. Nếu đây là generator dùng Testlib, chỉ dùng API thực sự có trong `vendor/testlib/testlib.h`; đặc biệt `random_t` không có `choice()`. Dùng `rnd.next(...)` để sinh số hoặc `rnd.any(container)` với container STL đã khai báo để chọn phần tử. Không thay lỗi bằng một API tự suy đoán khác. Rà soát lại mã đã sửa để tránh lỗi biên dịch tương tự. Chỉ trả mã C++ hoàn chỉnh trong một code block, không kèm giải thích.',
+      'Lỗi biên dịch:\n${diagnostics}\n\nMã nguồn:\n${source}',
+      testlibRandomApiGuidance,
+    ].join('\n\n'),
 
   quick:
-    'Tạo một Test Plan và generator C++17 từ đề bài. Chỉ trả về JSON hợp lệ theo cấu trúc {"testPlan":{"problemSpec":{"summary":"...","inputFormat":"...","outputFormat":"...","constraints":["..."]},"groups":[{"name":"...","description":"...","mode":"random|boundary|constructive|stress","count":1,"params":{}}]},"generator":"..."}. Generator phải dùng testlib.h, registerGen(argc, argv, 1), opt<T>(), suppressEnsureNoUnusedOpts(), sinh đúng một input ra stdout cho mỗi lần chạy, nhận mode/testIndex/params từ Electron; không sinh output đáp án. Không tự bịa dữ kiện hoặc ràng buộc. Đề bài:\n\n${statement}',
+    [
+      'Tạo một Test Plan và generator C++17 từ đề bài. Chỉ trả về JSON hợp lệ theo cấu trúc {"testPlan":{"problemSpec":{"summary":"...","inputFormat":"...","outputFormat":"...","constraints":["..."]},"groups":[{"name":"...","description":"...","mode":"random|boundary|constructive|stress","count":1,"params":{}}]},"generator":"..."}. Generator phải dùng `testlib.h`, `registerGen(argc, argv, 1)`, `opt<T>()`, `suppressEnsureNoUnusedOpts()`, sinh đúng một input ra stdout cho mỗi lần chạy, nhận mode/testIndex/params từ Electron; không sinh output đáp án. Không tự bịa dữ kiện hoặc ràng buộc.',
+      testlibRandomApiGuidance,
+      'Đề bài:\n\n${statement}',
+    ].join('\n\n'),
 
   connectionTest: 'Trả lời ngắn gọn: kết nối thành công.',
 } as const;
 
-export const AI_PROMPT_VERSION = '2.4.0';
+export const AI_PROMPT_VERSION = '2.5.0';

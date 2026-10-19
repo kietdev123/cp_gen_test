@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import type { AiRequest, GeneratorMode, Project, ProgramKind, Provider, Settings, TestCase, TestGenerationProgress, TestGroup, TestPlan, TestRunProgress } from '../shared/types';
 import { AI_PROMPT_VERSION, AI_PROMPTS } from '../shared/ai-prompts';
+import { parseTestGenerationCompileFailure } from '../shared/compile-errors';
 import { AiQuickResultSchema, AiStatementDraftSchema, AiTestPlanSchema, statementVersion } from '../shared/validation';
 import { DEFAULT_GENERATOR_TEMPLATE, DEFAULT_VALIDATOR_TEMPLATE } from '../shared/generator-template';
 import { useApp, type Page } from './stores/app';
@@ -44,6 +45,12 @@ const workflowSteps: { id: Extract<Page, 'problem' | 'test-plan' | 'generator' |
 const isWorkflowPage = (page: Page) => workflowSteps.some((step) => step.id === page);
 type AiWorkflowStep = 'generator' | 'solution';
 type AiWorkflowChoice = 'unasked' | 'ai';
+type CompileFixRequest = {
+  kind: ProgramKind;
+  source: string;
+  diagnostics: string;
+  afterFix?: (fixedSource: string) => Promise<void>;
+};
 
 function visibleProjectName(name: string): string {
   return name.replace(/\\n/g, ' ').replace(/\s+/g, ' ').trim();
@@ -116,6 +123,7 @@ function App() {
   const [runInput, setRunInput] = useState('');
   const [runOutput, setRunOutput] = useState('');
   const [compileDiagnostics, setCompileDiagnostics] = useState<Partial<Record<ProgramKind, string>>>({});
+  const [compileFixRequest, setCompileFixRequest] = useState<CompileFixRequest | null>(null);
   const [generationProgress, setGenerationProgress] = useState<TestGenerationProgress | null>(null);
   const [runProgress, setRunProgress] = useState<TestRunProgress | null>(null);
   const [ideaPrompt, setIdeaPrompt] = useState('');
@@ -321,7 +329,12 @@ function App() {
       const result = await retryOnce(() => window.studio.compile(active.id, kind, source), (attempt) => !attempt.ok, () => notify(`Biên dịch ${label} lỗi, sẽ thử lại sau 1 giây…`, 'info'));
       setCompileDiagnostics((current) => ({ ...current, [kind]: result.ok ? '' : result.diagnostics }));
       if (result.ok) notify(`${kind === 'generator' ? 'Generator' : kind === 'solution' ? 'Lời giải' : 'Validator'} biên dịch thành công với ${result.compiler}.`);
-      else notify(result.diagnostics || 'Biên dịch chưa thành công.', 'error');
+      else {
+        notify(result.diagnostics || 'Biên dịch chưa thành công.', 'error');
+        if (result.diagnostics.trim()) {
+          setCompileFixRequest({ kind, source, diagnostics: result.diagnostics, afterFix: async (fixedSource) => { await compileSource(kind, fixedSource); } });
+        }
+      }
       setCompilerAvailable(result.ok || compilerAvailable); setCompilerName(result.compiler);
       return result.ok;
     } catch (error) { notify((error as Error).message, 'error'); return false; }
@@ -447,18 +460,43 @@ function App() {
     }
   };
 
-  const fixCodeWithAi = async (kind: ProgramKind, source: string) => {
-    const diagnostics = compileDiagnostics[kind];
-    if (!diagnostics) { notify('Biên dịch mã trước để lấy diagnostics.', 'info'); return; }
+  const requestCodeFixFromAi = async (source: string, diagnostics: string): Promise<string | null> => {
     const prompt = AI_PROMPTS.codeFix.replace('${diagnostics}', () => diagnostics).replace('${source}', () => source);
     const answer = await runAi({ prompt, maxOutputTokens: 5000 }, 'Đang đề xuất sửa lỗi C++…');
-    if (!answer) return;
+    if (!answer) return null;
     const code = answer.match(/```(?:cpp|c\+\+)?\s*([\s\S]*?)```/i)?.[1]?.trim() ?? answer.trim();
+    return code || null;
+  };
+
+  const applyCodeFix = (kind: ProgramKind, code: string, notifyUser = true) => {
     if (kind === 'generator' && active) updateActive({ generator: code, tests: active.tests.map((test) => ({ ...test, inputStale: true, outputStale: Boolean(test.output) || test.outputStale })) });
     if (kind === 'solution' && active) updateActive({ solution: code, tests: active.tests.map((test) => ({ ...test, outputStale: Boolean(test.output) || test.outputStale })) });
     if (kind === 'validator' && active) updateActive({ validator: code, tests: active.tests.map((test) => ({ ...test, inputStale: true, outputStale: Boolean(test.output) || test.outputStale })) });
     if (kind === 'oracle' && active) updateActive({ oracleSolution: code, tests: active.tests.map((test) => test.status === 'verified' ? { ...test, outputStale: true } : test) });
-    notify('Đã đưa bản sửa AI vào trình soạn thảo. Hãy rà soát trước khi biên dịch lại.', 'info');
+    setCompileDiagnostics((current) => ({ ...current, [kind]: '' }));
+    if (notifyUser) notify('Đã đưa bản sửa AI vào trình soạn thảo. Hãy rà soát trước khi biên dịch lại.', 'info');
+  };
+
+  const fixCodeWithAi = async (kind: ProgramKind, source: string) => {
+    const diagnostics = compileDiagnostics[kind];
+    if (!diagnostics) { notify('Biên dịch mã trước để lấy diagnostics.', 'info'); return; }
+    const code = await requestCodeFixFromAi(source, diagnostics);
+    if (code) applyCodeFix(kind, code);
+  };
+
+  const acceptCompileFix = async () => {
+    const request = compileFixRequest;
+    if (!request) return;
+    setCompileFixRequest(null);
+    try {
+      const fixedSource = await requestCodeFixFromAi(request.source, request.diagnostics);
+      if (!fixedSource) return;
+      applyCodeFix(request.kind, fixedSource, false);
+      notify('AI đã cập nhật mã. Đang kiểm tra lại lỗi biên dịch…', 'info');
+      await request.afterFix?.(fixedSource);
+    } catch (error) {
+      notify(`AI chưa sửa được mã: ${(error as Error).message}`, 'error');
+    }
   };
 
   const analyzeTestPlan = async () => {
@@ -558,23 +596,75 @@ function App() {
     return exportedProjectId === project.id;
   };
 
-  const runGeneratorStep = async () => {
+  const runGeneratorStep = async (sourceOverride?: string, validatorOverride?: string) => {
     if (!active) return false;
-    const source = active.generator;
+    const source = sourceOverride ?? active.generator;
+    const validator = validatorOverride ?? active.validator;
     if (!isReadyGenerator(active, source)) { notify('Generator chưa sẵn sàng. Hãy sửa mã hoặc dùng nút AI trên màn hình.', 'info'); return false; }
     setBusy('generate');
     setGenerationProgress(null);
     try {
-      const result = await window.studio.generateTests(active.id, active.testPlan, active.seed, source, active.validator, statementVersion(active.statement), active.tests.map((test) => test.sha256).filter((hash): hash is string => Boolean(hash)));
+      const result = await window.studio.generateTests(active.id, active.testPlan, active.seed, source, validator, statementVersion(active.statement), active.tests.map((test) => test.sha256).filter((hash): hash is string => Boolean(hash)));
       const additions = result.tests.map((test, index) => ({ ...test, name: `TEST${String(active.tests.length + index + 1).padStart(2, '0')}` }));
-      const saved = await window.studio.saveProject({ ...active, generator: source, tests: [...active.tests, ...additions], generationLogs: [...active.generationLogs, result.log].slice(-100) });
+      const saved = await window.studio.saveProject({ ...active, generator: source, validator, tests: [...active.tests, ...additions], generationLogs: [...active.generationLogs, result.log].slice(-100) });
       upsertProject(saved); setActive(saved); setDirty(false);
       setSolutionCheckKey('');
       setGenerationProgress(null);
       notify(result.log.warnings[0] ?? `Đã sinh ${result.log.generated}/${result.log.requested} input duy nhất và hợp lệ.`, result.log.warnings.length ? 'info' : 'success');
       return result.log.generated > 0;
-    } catch (error) { notify((error as Error).message, 'error'); return false; }
+    } catch (error) {
+      const failure = parseTestGenerationCompileFailure(error);
+      if (failure) {
+        const sourceToFix = failure.kind === 'generator' ? source : validator;
+        setCompileDiagnostics((current) => ({ ...current, [failure.kind]: failure.diagnostics }));
+        setCompileFixRequest({
+          kind: failure.kind,
+          source: sourceToFix,
+          diagnostics: failure.diagnostics,
+          afterFix: async (fixedSource) => {
+            const generated = await runGeneratorStep(
+              failure.kind === 'generator' ? fixedSource : source,
+              failure.kind === 'validator' ? fixedSource : validator,
+            );
+            if (generated) setPage('solution');
+          },
+        });
+      } else notify((error as Error).message, 'error');
+      return false;
+    }
     finally { setBusy(''); }
+  };
+
+  const regenerateTestCase = async (test: TestCase, sourceOverride?: string, validatorOverride?: string) => {
+    if (!active) return;
+    const group = active.testPlan.groups.find((item) => item.id === test.groupId);
+    if (!group) { notify('Không tìm thấy nhóm Test Plan để sinh lại testcase.', 'error'); return; }
+    const source = sourceOverride ?? active.generator;
+    const validator = validatorOverride ?? active.validator;
+    setBusy('generate');
+    try {
+      const regenerated = await window.studio.regenerateTest(active.id, group, active.seed, test.testIndex ?? 1, source, validator, statementVersion(active.statement), active.tests.filter((item) => item.id !== test.id && item.sha256).map((item) => item.sha256!));
+      updateActive({ tests: active.tests.map((item) => item.id === test.id ? regenerated : item) });
+      notify(`Đã sinh lại ${test.name}.`);
+    } catch (error) {
+      const failure = parseTestGenerationCompileFailure(error);
+      if (failure) {
+        const sourceToFix = failure.kind === 'generator' ? source : validator;
+        setCompileDiagnostics((current) => ({ ...current, [failure.kind]: failure.diagnostics }));
+        setCompileFixRequest({
+          kind: failure.kind,
+          source: sourceToFix,
+          diagnostics: failure.diagnostics,
+          afterFix: async (fixedSource) => {
+            await regenerateTestCase(
+              test,
+              failure.kind === 'generator' ? fixedSource : source,
+              failure.kind === 'validator' ? fixedSource : validator,
+            );
+          },
+        });
+      } else notify((error as Error).message, 'error');
+    } finally { setBusy(''); }
   };
 
   const openSavedExportDirectory = async () => {
@@ -616,17 +706,7 @@ function App() {
     if (page === 'test-plan') return active ? <TestPlanEditor project={active} update={updateActive} analyze={analyzeTestPlan} quickCreate={quickCreateWithAi} busy={busy} /> : <EmptyProject create={() => setProjectModal(true)} />;
     if (page === 'generator') return active ? <Generator project={active} update={updateActive} progress={generationProgress} goToPlan={() => setPage('test-plan')} askAi={() => generateCodeWithAi('generator')} askValidator={generateValidatorWithAi} compile={() => compileSource('generator', active.generator)} compileValidator={() => compileSource('validator', active.validator)} fix={() => void fixCodeWithAi('generator', active.generator)} fixValidator={() => void fixCodeWithAi('validator', active.validator)} diagnostics={compileDiagnostics.generator ?? ''} validatorDiagnostics={compileDiagnostics.validator ?? ''} busy={busy} /> : <EmptyProject create={() => setProjectModal(true)} />;
     if (page === 'solution') return active ? <Solution project={active} update={updateActive} input={runInput} setInput={setRunInput} output={runOutput} busy={busy} compile={() => compileSource('solution', active.solution)} run={runSolution} askAi={() => generateCodeWithAi('solution')} fix={() => void fixCodeWithAi('solution', active.solution)} diagnostics={compileDiagnostics.solution ?? ''} /> : <EmptyProject create={() => setProjectModal(true)} />;
-    if (page === 'runner') return active ? <Runner project={active} busy={busy} progress={runProgress} runAll={runAllTests} clear={() => updateActive({ tests: [] })} regenerate={async (test) => {
-      const group = active.testPlan.groups.find((item) => item.id === test.groupId);
-      if (!group) { notify('Không tìm thấy nhóm Test Plan để sinh lại testcase.', 'error'); return; }
-      setBusy('generate');
-      try {
-        const regenerated = await window.studio.regenerateTest(active.id, group, active.seed, test.testIndex ?? 1, active.generator, active.validator, statementVersion(active.statement), active.tests.filter((item) => item.id !== test.id && item.sha256).map((item) => item.sha256!));
-        updateActive({ tests: active.tests.map((item) => item.id === test.id ? regenerated : item) });
-        notify(`Đã sinh lại ${test.name}.`);
-      } catch (error) { notify((error as Error).message, 'error'); }
-      finally { setBusy(''); }
-    }} remove={(test) => updateActive({ tests: active.tests.filter((item) => item.id !== test.id) })} runGroup={runTestGroup} /> : <EmptyProject create={() => setProjectModal(true)} />;
+    if (page === 'runner') return active ? <Runner project={active} busy={busy} progress={runProgress} runAll={runAllTests} clear={() => updateActive({ tests: [] })} regenerate={regenerateTestCase} remove={(test) => updateActive({ tests: active.tests.filter((item) => item.id !== test.id) })} runGroup={runTestGroup} /> : <EmptyProject create={() => setProjectModal(true)} />;
     if (page === 'export') return active ? <Export project={active} busy={busy} directory={exportDirectory} exported={exportedProjectId === active.id} exportAgain={exportAllFiles} openSavedDirectory={openSavedExportDirectory} /> : <EmptyProject create={() => setProjectModal(true)} />;
     if (page === 'help') return <HelpPage />;
     return <SettingsPage settings={settings} hasKeys={hasKeys} aiKey={aiKey} setAiKey={setAiKey} saveKey={saveKey} update={updateSettings} busy={busy} compilerAvailable={compilerAvailable} compilerName={compilerName} test={async () => { setBusy('Đang kiểm tra kết nối AI…'); try { const result = await window.studio.testAiConnection({ provider: settings?.provider, prompt: AI_PROMPTS.connectionTest }); notify(`Kết nối thành công: ${result}`, 'success'); } catch (error) { notify((error as Error).message, 'error'); } finally { setBusy(''); } }} removeKey={async (provider) => { await window.studio.removeApiKey(provider); setHasKeys({ ...hasKeys, [provider]: false }); notify('Đã xóa API key.'); }} chooseCompiler={async () => { const file = await window.studio.chooseCompiler(); if (file && settings) { const next = { ...settings, compilerPath: file }; await updateSettings(next); const status = await window.studio.getStatus(); setCompilerAvailable(status.compilerAvailable); setCompilerName(status.compiler); } }} chooseDocumentTools={async () => { const folder = await window.studio.chooseDocumentTools(); if (folder && settings) await updateSettings({ ...settings, documentToolsPath: folder }); }} onClearData={() => setClearDataModal(true)} />;
@@ -741,6 +821,7 @@ function App() {
 
     {projectModal && <Modal title="Tạo bài thi mới" subtitle="Mỗi bài thi lưu đề bài, mã nguồn và testcase trong một thư mục riêng." close={() => setProjectModal(false)}><label className="field-label">Tên bài thi</label><input autoFocus className="text-input" value={projectName} onChange={(event) => setProjectName(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && void createProject()} placeholder="Ví dụ: Bài toán dãy con tăng" /><div className="modal-actions"><button className="button button-secondary" onClick={() => setProjectModal(false)}>Hủy</button><button className="button button-primary" onClick={() => void createProject()}><Plus size={16} /> Tạo bài thi</button></div></Modal>}
     {clearDataModal && <Modal title="Xóa bài thi và dữ liệu AI?" subtitle="Thao tác này không thể hoàn tác. Chỉ xóa sau khi bạn xác nhận." close={() => setClearDataModal(false)}><div className="security-note"><TriangleAlert size={16} /><span>Sẽ xóa toàn bộ bài thi, testcase, ảnh đính kèm, bộ nhớ AI trong bài thi, API key và lựa chọn model AI. Compiler, giao diện và các cài đặt khác được giữ nguyên.</span></div><div className="modal-actions"><button className="button button-secondary" onClick={() => setClearDataModal(false)}>Hủy</button><button className="button button-danger" onClick={() => void clearProjectsAndAiData()} disabled={Boolean(busy)}><Trash2 size={15} /> Xóa dữ liệu</button></div></Modal>}
+    {compileFixRequest && <Modal title="Phát hiện lỗi biên dịch" subtitle={`${compileFixRequest.kind === 'generator' ? 'Generator' : compileFixRequest.kind === 'validator' ? 'Validator' : compileFixRequest.kind === 'solution' ? 'Lời giải' : 'Oracle'} không biên dịch được.`} close={() => setCompileFixRequest(null)}><div className="security-note"><Sparkles size={16} /><span>Bạn có muốn gửi mã nguồn và diagnostics đến AI đã cấu hình để sửa không? Bản sửa sẽ được đưa vào trình soạn thảo rồi biên dịch lại. Nếu lỗi xảy ra khi sinh testcase, ứng dụng sẽ thử sinh lại sau khi mã biên dịch thành công.</span></div><div className="modal-actions"><button className="button button-secondary" onClick={() => setCompileFixRequest(null)}>Để tôi tự sửa</button><button className="button button-primary" onClick={() => void acceptCompileFix()}><Sparkles size={15} /> Sửa bằng AI</button></div></Modal>}
     {aiKeyModal && <Modal title="Cấu hình API key để tiếp tục" subtitle={`Tính năng này cần ${aiKeyModal === "openai" ? "OpenAI" : "Gemini"}. Key được mã hóa và lưu cục bộ.`} close={cancelAiKeySetup}><label className="field-label">API key {aiKeyModal === "openai" ? "OpenAI" : "Gemini"}</label><input autoFocus className="text-input" type="password" value={aiKey} onChange={(event) => setAiKey(event.target.value)} placeholder="Dán API key tại đây" /><div className="security-note"><Shield size={15} /><span>Key chỉ được gửi khi bạn mở bước cần AI hoặc chủ động yêu cầu AI.</span></div><div className="modal-actions"><button className="button button-plain" onClick={cancelAiKeySetup}>Hủy</button><button className="button button-primary" onClick={() => void saveAiKeyAndContinue()} disabled={busy === "key"}><Save size={15} /> Lưu và tiếp tục</button></div></Modal>}
     {onboarding && settings && <Modal title="Chào mừng đến CP Test Studio" subtitle="Soạn đề và chạy bộ test ngay trên máy. API AI là tùy chọn, bạn có thể cấu hình sau." close={() => void finishOnboarding(true)} wide><div className="welcome-banner"><div className="welcome-icon"><Rocket size={23} /></div><div><b>Bắt đầu làm việc theo cách của bạn</b><p>Không cần tài khoản. Bài thi được lưu trên máy, các thao tác biên dịch và tạo testcase chạy ngoại tuyến.</p></div></div><div className="onboard-api"><div><label className="field-label">Nhà cung cấp AI (không bắt buộc)</label><select className="text-input" value={settings.provider} onChange={(event) => void updateSettings({ ...settings, provider: event.target.value as Provider })}><option value="openai">OpenAI</option><option value="gemini">Google Gemini</option></select></div><div><label className="field-label">API key</label><div className="input-with-button"><input className="text-input" type="password" value={aiKey} onChange={(event) => setAiKey(event.target.value)} placeholder="Có thể bỏ qua và thêm sau" /><KeyRound size={16} /></div></div></div><div className="security-note"><Shield size={16} /><span>API key được mã hóa bởi Windows; AI tự chạy khi bạn mở bước 2–4 còn thiếu nội dung.</span></div><div className="modal-actions"><button className="button button-plain" onClick={() => void finishOnboarding(true)}>Bỏ qua, dùng không cần AI</button><button className="button button-primary" onClick={() => void finishOnboarding(false)} disabled={Boolean(aiKey && busy === 'key')}>Bắt đầu sử dụng <ArrowRight size={16} /></button></div></Modal>}
     {toast && <div className={`toast toast-${toast.kind}`}><span className="toast-mark">{toast.kind === 'success' ? <Check size={16} /> : toast.kind === 'error' ? <TriangleAlert size={16} /> : <CircleHelp size={16} />}</span>{toast.text}<button onClick={() => setToast(null)}><X size={15} /></button></div>}
