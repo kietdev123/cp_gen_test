@@ -2,6 +2,8 @@
 
 CP Test Studio giúp soạn đề, tạo testcase bằng generator C++17, kiểm tra lời giải và xuất bộ đề ngay trên máy.
 
+Phát triển bởi **Nguyễn Hoàng Kiệt - THK9 - Trường THPT Chuyên Nguyên Quang Diêu, tỉnh Đồng Tháp**.
+
 ## Bắt đầu
 
 - Chọn **Bài thi** ở sidebar. Bấm **Bài thi mới**, đặt tên rồi mở bài thi trong bảng.

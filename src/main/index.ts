@@ -12,8 +12,6 @@ import { AI_PROMPT_VERSION, AI_PROMPTS } from '../shared/ai-prompts';
 import { createDefaultTestPlan, normalizeProjectJson, TestGroupSchema, TestPlanSchema, statementVersion } from '../shared/validation';
 import { DEFAULT_GENERATOR_TEMPLATE } from '../shared/generator-template';
 
-if (process.env.CP_STUDIO_SMOKE_USER_DATA) app.setPath('userData', path.resolve(process.env.CP_STUDIO_SMOKE_USER_DATA));
-
 const DEFAULT_SETTINGS: Settings = {
   onboardingComplete: false,
   provider: 'openai',
@@ -392,9 +390,6 @@ ipcMain.handle('settings:document-tools:choose', async () => {
 });
 ipcMain.handle('ai:test', async (_event, request: AiRequest) => (await callAi({ ...request, prompt: AI_PROMPTS.connectionTest }, true)).text);
 ipcMain.handle('ai:ask', async (_event, request: AiRequest): Promise<AiResponse> => {
-  if (process.env.CP_STUDIO_SMOKE_FAKE_AI === '1') {
-    return { text: '```cpp\n#include <bits/stdc++.h>\n#include "testlib.h"\nusing namespace std;\nint main(int argc, char* argv[]) {\n    registerGen(argc, argv, 1);\n    int offset = rnd.next(0, 1) == 0 ? -1 : 1;\n    cout << offset << \'\\n\';\n}\n```' };
-  }
   const settings = await readSettings();
   const provider = request.provider ?? settings.provider;
   const model = request.model || settings.models[provider];
