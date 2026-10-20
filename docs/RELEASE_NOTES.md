@@ -2,6 +2,22 @@
 
 Nhật ký dưới đây ghi nội dung theo từng version được tìm thấy trong lịch sử `package.json` của Git. Repo không có tag hoặc bằng chứng cho biết các version này đã được phát hành thành bản cài đặt, vì vậy đây là ghi chú theo version trong mã nguồn.
 
+## 1.0.25 — cập nhật lúc 20/10/2026 23:01:00 +07:00
+
+- Thông báo lỗi từ Gemini được chuyển thành hướng dẫn tiếng Việt cho lỗi quá tải/dịch vụ (`503`), quota/giới hạn tốc độ (`429`), API key, quyền truy cập, model, yêu cầu không hợp lệ, lỗi máy chủ và timeout.
+- Áp dụng thông báo thân thiện cho cả yêu cầu AI và thao tác kiểm tra kết nối; lỗi mạng cũng được diễn giải để người dùng biết cần kiểm tra Internet.
+
+## 1.0.24 — cập nhật lúc 20/10/2026 22:40:18 +07:00
+
+- Khi AI tạo đề từ ý tưởng hoặc đọc đề từ ảnh, AI suy luận `stdin/stdout` hay `File Input / File Output`, trả về chế độ cùng nội dung đề và tự cập nhật lựa chọn I/O ở Bước 1.
+- Nếu nội dung không chỉ rõ file I/O, AI mặc định chọn stdin/stdout. Người dùng vẫn có thể đổi lựa chọn thủ công trước khi tạo lời giải.
+
+## 1.0.23 — cập nhật lúc 20/10/2026 22:10:00 +07:00
+
+- Bước **Biên soạn đề** cho phép chọn stdin/stdout hoặc File Input/File Output riêng cho từng bài.
+- AI nhận chế độ đã chọn khi tạo đề từ ý tưởng/ảnh và tạo lời giải cùng Editorial tương ứng.
+- Khi kiểm tra lời giải ở chế độ file, ứng dụng ghi input và đọc output qua các tên file Themis đã cấu hình. ZIP Themis vẫn giữ cặp file input/output cho từng testcase.
+
 ## 1.0.22 — cập nhật lúc 20/10/2026 21:49:14 +07:00
 
 - Trang **Hướng dẫn sử dụng** và **Ghi chú phát hành** chỉ hiển thị panel nội dung chính; bỏ tiêu đề trang, nút tạo bài thi và cảnh báo compiler khỏi hai trang tài liệu.

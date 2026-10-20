@@ -5,6 +5,7 @@
 - Do not change dependency versions when only bumping the app version.
 - Preserve historical build reports; update current setup instructions when artifact names change.
 - Treat the version in `package.json` as the source of truth; do not hard-code the current version in these instructions.
+- Before operating Themis, read [docs/THEMIS_GUIDE.md](docs/THEMIS_GUIDE.md), especially **Quy trình thao tác nhanh đã kiểm chứng trên máy này**. Inspect the current score table first; reuse an already loaded task/contestant and saved I/O configuration, and only reload or reconfigure what is missing or changed.
 
 ## Documentation maintenance
 

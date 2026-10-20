@@ -1,5 +1,6 @@
 export type Provider = 'openai' | 'gemini';
 export type ProgramKind = 'generator' | 'solution' | 'validator' | 'oracle';
+export type IoMode = 'stdin-stdout' | 'file-io';
 export type GeneratorMode = 'random' | 'boundary' | 'constructive' | 'stress';
 export type TestStatus = 'pending' | 'running' | 'generated' | 'verified' | 'duplicate' | 'failed' | 'timeout' | 'invalid' | 'error' | 'passed';
 
@@ -116,6 +117,7 @@ export interface Project {
   createdAt: string;
   updatedAt: string;
   statement: string;
+  ioMode: IoMode;
   generator: string;
   solution: string;
   solutionGuide: string;
@@ -206,11 +208,11 @@ export interface AppApi {
   chooseCompiler(): Promise<string | null>;
   chooseDocumentTools(): Promise<string | null>;
   compile(projectId: string, kind: ProgramKind, source: string): Promise<CompileResult>;
-  run(projectId: string, kind: ProgramKind, input: string, args?: string[], timeoutMs?: number): Promise<RunResult>;
+  run(projectId: string, kind: ProgramKind, input: string, args?: string[], timeoutMs?: number, ioOptions?: { mode: IoMode; inputFile: string; outputFile: string }): Promise<RunResult>;
   generateTests(projectId: string, plan: TestPlan, seed: number, source: string, validator: string, statementVersion: string, excludedHashes?: string[]): Promise<TestGenerationResult>;
   regenerateTest(projectId: string, group: TestGroup, seed: number, testIndex: number, source: string, validator: string, statementVersion: string, excludedHashes: string[]): Promise<TestCase>;
   onGenerationProgress(callback: (progress: TestGenerationProgress) => void): () => void;
-  runTests(projectId: string, solution: string, tests: TestCase[], timeLimitMs: number, testIds?: string[], oracleSolution?: string): Promise<TestCase[]>;
+  runTests(projectId: string, solution: string, tests: TestCase[], timeLimitMs: number, testIds?: string[], oracleSolution?: string, ioOptions?: { mode: IoMode; inputFile: string; outputFile: string }): Promise<TestCase[]>;
   onTestRunProgress(callback: (progress: TestRunProgress) => void): () => void;
   exportThemis(project: Project): Promise<string | null>;
   exportMarkdown(project: Project): Promise<string | null>;

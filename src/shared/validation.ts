@@ -1,8 +1,9 @@
 import { z } from 'zod';
-import type { GeneratorMode, Project, TestPlan } from './types';
+import type { GeneratorMode, IoMode, Project, TestPlan } from './types';
 
 export const generatorModes = ['random', 'boundary', 'constructive', 'stress'] as const satisfies readonly GeneratorMode[];
 export const GeneratorModeSchema = z.enum(generatorModes);
+export const IoModeSchema = z.enum(['stdin-stdout', 'file-io'] satisfies readonly IoMode[]);
 
 const parameterKey = z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,31}$/, 'Tên tham số không hợp lệ.');
 const parameterValue = z.string().max(256, 'Giá trị tham số tối đa 256 ký tự.').refine((value) => !/[\r\n\0]/.test(value), 'Giá trị tham số không được chứa dòng mới.');
@@ -60,6 +61,7 @@ export const AiQuickResultSchema = z.object({
 
 export const AiStatementDraftSchema = z.object({
   statement: z.string().min(1).max(100_000),
+  ioMode: IoModeSchema,
   themisInputFile: z.string().trim().min(1).max(128),
   themisOutputFile: z.string().trim().min(1).max(128),
 }).strict();
@@ -88,7 +90,7 @@ const AiCachedResultSchema = z.object({
 
 export const ProjectStorageSchema = z.object({
   id: z.string(), name: z.string(), createdAt: z.string(), updatedAt: z.string(),
-  statement: z.string().default(''), generator: z.string().default(''), solution: z.string().default(''), solutionGuide: z.string().default(''), validator: z.string().default(''),
+  statement: z.string().default(''), ioMode: IoModeSchema.default('stdin-stdout'), generator: z.string().default(''), solution: z.string().default(''), solutionGuide: z.string().default(''), validator: z.string().default(''),
   images: z.array(z.object({ id: z.string(), name: z.string(), mimeType: z.string(), addedAt: z.string() })).default([]),
   tests: z.array(TestCaseSchema).default([]), testPlan: TestPlanSchema.optional(),
   generationLogs: z.array(TestGenerationLogSchema).default([]), aiCache: z.record(z.string(), AiCachedResultSchema).default({}),

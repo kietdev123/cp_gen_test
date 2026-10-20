@@ -21,6 +21,7 @@ import {
 import type { AiRequest, GeminiModelCatalog, GeminiModelInfo, GeneratorMode, Project, ProgramKind, Provider, Settings, TestCase, TestGenerationProgress, TestGroup, TestPlan, TestRunProgress } from '../shared/types';
 import { AI_PROMPT_VERSION, AI_PROMPTS } from '../shared/ai-prompts';
 import { parseTestGenerationCompileFailure } from '../shared/compile-errors';
+import { friendlyGeminiApiError } from '../shared/gemini-errors';
 import { AiQuickResultSchema, AiStatementDraftSchema, AiTestPlanSchema, statementVersion } from '../shared/validation';
 import { DEFAULT_GENERATOR_TEMPLATE, DEFAULT_VALIDATOR_TEMPLATE } from '../shared/generator-template';
 import { useApp, type Page } from './stores/app';
@@ -151,7 +152,7 @@ function App() {
   };
 
   const notify = useCallback((text: string, kind: 'success' | 'error' | 'info' = 'success') => {
-    setToast({ text, kind }); window.setTimeout(() => setToast(null), 3800);
+    setToast({ text, kind }); window.setTimeout(() => setToast(null), kind === 'error' ? 7000 : 3800);
   }, []);
 
   useEffect(() => {
@@ -292,7 +293,13 @@ function App() {
     try {
       const response = await window.studio.askAi(request);
       return operationWasCancelled.current ? '' : response.text;
-    } catch (error) { if (!operationWasCancelled.current) notify((error as Error).message, 'error'); return ''; }
+    } catch (error) {
+      if (!operationWasCancelled.current) {
+        const provider = request.provider ?? settings?.provider;
+        notify((provider === 'gemini' ? friendlyGeminiApiError(error) : null) ?? (error as Error).message, 'error');
+      }
+      return '';
+    }
     finally { setBusy(''); }
   };
 
@@ -362,7 +369,8 @@ function App() {
     if (!ok) return;
     startBusy('run');
     try {
-      const result = await retryOnce(() => window.studio.run(active.id, 'solution', runInput, [], active.timeLimitMs), (attempt) => attempt.timedOut || attempt.exitCode !== 0 || attempt.outputLimited, () => notify('Chạy thử lời giải gặp lỗi, sẽ thử lại sau 1 giây…', 'info'));
+      const ioOptions = { mode: active.ioMode, inputFile: settings?.themisInputFile ?? 'BAI.INP', outputFile: settings?.themisOutputFile ?? 'BAI.OUT' };
+      const result = await retryOnce(() => window.studio.run(active.id, 'solution', runInput, [], active.timeLimitMs, ioOptions), (attempt) => attempt.timedOut || attempt.exitCode !== 0 || attempt.outputLimited, () => notify('Chạy thử lời giải gặp lỗi, sẽ thử lại sau 1 giây…', 'info'));
       setRunOutput(`${result.timedOut ? 'Quá thời gian.\n' : ''}${result.stdout}${result.stderr ? `\n[stderr]\n${result.stderr}` : ''}${result.exitCode !== 0 && !result.timedOut ? `\nMã thoát: ${result.exitCode}` : ''}`);
     } catch (error) { if (!operationWasCancelled.current) notify((error as Error).message, 'error'); }
     finally { setBusy(''); }
@@ -373,7 +381,8 @@ function App() {
     startBusy('run-tests');
     setRunProgress(null);
     try {
-      const result = await window.studio.runTests(active.id, active.solution, active.tests, active.timeLimitMs, undefined, active.oracleSolution);
+      const ioOptions = { mode: active.ioMode, inputFile: settings?.themisInputFile ?? 'BAI.INP', outputFile: settings?.themisOutputFile ?? 'BAI.OUT' };
+      const result = await window.studio.runTests(active.id, active.solution, active.tests, active.timeLimitMs, undefined, active.oracleSolution, ioOptions);
       updateActive({ tests: result });
       const eligible = result.filter((test) => !test.inputStale && !['duplicate', 'invalid', 'error'].includes(test.status));
       const ready = eligible.filter((test) => ['generated', 'verified'].includes(test.status) && !test.outputStale).length;
@@ -390,7 +399,8 @@ function App() {
     startBusy('run-tests');
     setRunProgress(null);
     try {
-      const result = await window.studio.runTests(active.id, active.solution, active.tests, active.timeLimitMs, ids, active.oracleSolution);
+      const ioOptions = { mode: active.ioMode, inputFile: settings?.themisInputFile ?? 'BAI.INP', outputFile: settings?.themisOutputFile ?? 'BAI.OUT' };
+      const result = await window.studio.runTests(active.id, active.solution, active.tests, active.timeLimitMs, ids, active.oracleSolution, ioOptions);
       updateActive({ tests: result });
       notify(`Đã chạy ${ids.length} testcase trong nhóm.`);
     } catch (error) { if (!operationWasCancelled.current) notify((error as Error).message, 'error'); }
@@ -449,13 +459,13 @@ function App() {
       }
     }
     if (!image) { notify('Chưa có ảnh đề trong bài thi.', 'info'); return; }
-    const answer = await runAi({ prompt: AI_PROMPTS.imageToStatement, image: { data: image.data, mimeType: image.mimeType }, maxOutputTokens: 4000, outputFormat: 'json' }, 'Đang đọc ảnh…');
+    const answer = await runAi({ prompt: AI_PROMPTS.imageToStatement(), image: { data: image.data, mimeType: image.mimeType }, maxOutputTokens: 4000, outputFormat: 'json' }, 'Đang đọc ảnh…');
     if (answer) {
       try {
         const draft = AiStatementDraftSchema.parse(parseJsonResponse(answer));
-        updateActive({ statement: draft.statement, tests: active.tests.map((test) => ({ ...test, inputStale: true, outputStale: Boolean(test.output) || test.outputStale })) });
+        updateActive({ statement: draft.statement, ioMode: draft.ioMode, tests: active.tests.map((test) => ({ ...test, inputStale: true, outputStale: Boolean(test.output) || test.outputStale })) });
         if (settings) await updateSettings({ ...settings, themisInputFile: draft.themisInputFile, themisOutputFile: draft.themisOutputFile });
-        notify('Đã đưa nội dung đề và tên file Themis do AI đề xuất vào bước 1.');
+        notify(`Đã đưa nội dung đề, chế độ ${draft.ioMode === 'file-io' ? 'File Input / File Output' : 'stdin/stdout'} và tên file Themis do AI đề xuất vào bước 1.`);
       } catch (error) { notify(`AI trả về dữ liệu đề hoặc tên file Themis không hợp lệ: ${(error as Error).message}`, 'error'); }
     }
   };
@@ -468,9 +478,9 @@ function App() {
     if (answer && active) {
       try {
         const draft = AiStatementDraftSchema.parse(parseJsonResponse(answer));
-        updateActive({ statement: draft.statement, tests: active.tests.map((test) => ({ ...test, inputStale: true, outputStale: Boolean(test.output) || test.outputStale })) });
+        updateActive({ statement: draft.statement, ioMode: draft.ioMode, tests: active.tests.map((test) => ({ ...test, inputStale: true, outputStale: Boolean(test.output) || test.outputStale })) });
         if (settings) await updateSettings({ ...settings, themisInputFile: draft.themisInputFile, themisOutputFile: draft.themisOutputFile });
-        notify('AI đã đưa bản đề và tên file Themis vào bước 1 để bạn kiểm tra, chỉnh sửa.');
+        notify(`AI đã đưa bản đề, chế độ ${draft.ioMode === 'file-io' ? 'File Input / File Output' : 'stdin/stdout'} và tên file Themis vào bước 1 để bạn kiểm tra, chỉnh sửa.`);
       } catch (error) { notify(`AI trả về dữ liệu đề hoặc tên file Themis không hợp lệ: ${(error as Error).message}`, 'error'); }
     }
   };
@@ -550,7 +560,7 @@ function App() {
 
   const generateCodeWithAi = async (kind: AiWorkflowStep): Promise<string> => {
     if (!active) return '';
-    const task = kind === 'generator' ? AI_PROMPTS.generator : AI_PROMPTS.solution;
+    const task = kind === 'generator' ? AI_PROMPTS.generator : AI_PROMPTS.solution(active.ioMode, settings?.themisInputFile ?? 'BAI.INP', settings?.themisOutputFile ?? 'BAI.OUT');
     const generatorForSolution = kind === 'solution' ? active.generator.trim().slice(0, 16_000) : '';
     const generatorExcerptNote = kind === 'solution' && active.generator.trim().length > 16_000 ? '\n[Generator đã được rút gọn tại 16.000 ký tự.]' : '';
     const context = kind === 'generator'
@@ -589,7 +599,7 @@ function App() {
     && project.testPlan.problemSpec.outputFormat.trim(),
   );
   const usableTests = (project: Project) => project.tests.filter((test) => !test.inputStale && !['duplicate', 'invalid', 'error'].includes(test.status));
-  const solutionKey = (project: Project, source = project.solution) => `${project.id}:${source}:${project.tests.map((test) => test.id).join(',')}`;
+  const solutionKey = (project: Project, source = project.solution) => `${project.id}:${project.ioMode}:${settings?.themisInputFile ?? 'BAI.INP'}:${settings?.themisOutputFile ?? 'BAI.OUT'}:${source}:${project.tests.map((test) => test.id).join(',')}`;
 
   useEffect(() => {
     if (!active || page !== 'test-plan' || !isReadyStatement(active)) return;
@@ -709,7 +719,8 @@ function App() {
     try {
       const input = runInput || usableTests(active)[0]?.input || '';
       if (!input) { notify('Hãy sinh ít nhất một testcase hợp lệ trước khi kiểm tra lời giải.', 'info'); return false; }
-      const result = await retryOnce(() => window.studio.run(active.id, 'solution', input, [], active.timeLimitMs), (attempt) => attempt.timedOut || attempt.exitCode !== 0 || attempt.outputLimited, () => notify('Chạy thử lời giải gặp lỗi, sẽ thử lại sau 1 giây…', 'info'));
+      const ioOptions = { mode: active.ioMode, inputFile: settings?.themisInputFile ?? 'BAI.INP', outputFile: settings?.themisOutputFile ?? 'BAI.OUT' };
+      const result = await retryOnce(() => window.studio.run(active.id, 'solution', input, [], active.timeLimitMs, ioOptions), (attempt) => attempt.timedOut || attempt.exitCode !== 0 || attempt.outputLimited, () => notify('Chạy thử lời giải gặp lỗi, sẽ thử lại sau 1 giây…', 'info'));
       setRunInput(input);
       setRunOutput(`${result.timedOut ? 'Quá thời gian.\n' : ''}${result.stdout}${result.stderr ? `\n[stderr]\n${result.stderr}` : ''}${result.exitCode !== 0 && !result.timedOut ? `\nMã thoát: ${result.exitCode}` : ''}`);
       if (result.timedOut || result.exitCode !== 0 || result.outputLimited) {
@@ -736,7 +747,7 @@ function App() {
     if (page === 'export') return active ? <Export project={active} themisInputFile={settings?.themisInputFile ?? 'BAI.INP'} busy={busy} directory={exportDirectory} exported={exportedProjectId === active.id} exportAgain={exportAllFiles} openSavedDirectory={openSavedExportDirectory} /> : <EmptyProject create={() => setProjectModal(true)} />;
     if (page === 'help') return <HelpPage />;
     if (page === 'release-notes') return <ReleaseNotesPage />;
-    return <SettingsPage settings={settings} hasKeys={hasKeys} aiKey={aiKey} setAiKey={setAiKey} saveKey={saveKey} update={updateSettings} busy={busy} compilerAvailable={compilerAvailable} compilerName={compilerName} test={async () => { startBusy('Đang kiểm tra kết nối AI…'); try { const result = await window.studio.testAiConnection({ provider: settings?.provider, prompt: AI_PROMPTS.connectionTest }); if (!operationWasCancelled.current) notify(`Kết nối thành công: ${result}`, 'success'); } catch (error) { if (!operationWasCancelled.current) notify((error as Error).message, 'error'); } finally { setBusy(''); } }} removeKey={async (provider) => { await window.studio.removeApiKey(provider); setHasKeys({ ...hasKeys, [provider]: false }); notify('Đã xóa API key.'); }} chooseCompiler={async () => { const file = await window.studio.chooseCompiler(); if (file && settings) { const next = { ...settings, compilerPath: file }; await updateSettings(next); const status = await window.studio.getStatus(); setCompilerAvailable(status.compilerAvailable); setCompilerName(status.compiler); } }} chooseDocumentTools={async () => { const folder = await window.studio.chooseDocumentTools(); if (folder && settings) await updateSettings({ ...settings, documentToolsPath: folder }); }} onClearData={() => setClearDataModal(true)} />;
+    return <SettingsPage settings={settings} hasKeys={hasKeys} aiKey={aiKey} setAiKey={setAiKey} saveKey={saveKey} update={updateSettings} busy={busy} compilerAvailable={compilerAvailable} compilerName={compilerName} test={async () => { startBusy('Đang kiểm tra kết nối AI…'); try { const result = await window.studio.testAiConnection({ provider: settings?.provider, prompt: AI_PROMPTS.connectionTest }); if (!operationWasCancelled.current) notify(`Kết nối thành công: ${result}`, 'success'); } catch (error) { if (!operationWasCancelled.current) notify(friendlyGeminiApiError(error) ?? (error as Error).message, 'error'); } finally { setBusy(''); } }} removeKey={async (provider) => { await window.studio.removeApiKey(provider); setHasKeys({ ...hasKeys, [provider]: false }); notify('Đã xóa API key.'); }} chooseCompiler={async () => { const file = await window.studio.chooseCompiler(); if (file && settings) { const next = { ...settings, compilerPath: file }; await updateSettings(next); const status = await window.studio.getStatus(); setCompilerAvailable(status.compilerAvailable); setCompilerName(status.compiler); } }} chooseDocumentTools={async () => { const folder = await window.studio.chooseDocumentTools(); if (folder && settings) await updateSettings({ ...settings, documentToolsPath: folder }); }} onClearData={() => setClearDataModal(true)} />;
   };
 
   const currentPage = pageInfo[page];
@@ -950,7 +961,11 @@ function Problem({ project, update, settings, updateSettings, sourceMode, setSou
       <div className="image-source-actions"><button className="button button-secondary button-small" onClick={onPickImage}><FileImage size={14} /> {photoName ? 'Đổi ảnh' : 'Chọn ảnh'}</button>{photoName && <button className="button button-primary button-small" onClick={onExtract} disabled={aiBusy}><Sparkles size={14} /> Đọc ảnh bằng AI</button>}</div>
     </section>}
     <div className="editor-layout"><div className="panel editor-panel"><div className="panel-toolbar"><div className="toolbar-title"><FileText size={16} /><b>{sourceMode === 'image' ? 'Nội dung trích xuất / chỉnh sửa' : 'Nội dung đề'}</b><span className="format-pill">MARKDOWN</span></div></div><div className="document-title"><input value={visibleProjectName(project.name)} onChange={(e) => update({ name: e.target.value })} aria-label="Tên bài thi" /><span>ĐỀ BÀI / MÔ TẢ</span></div><textarea className="code-textarea markdown-input" spellCheck={false} value={project.statement} onChange={(e) => update({ statement: e.target.value, tests: project.tests.map((test) => ({ ...test, inputStale: true, outputStale: Boolean(test.output) || test.outputStale })) })} placeholder={sourceMode === 'image' ? 'Nội dung đọc từ ảnh sẽ hiện tại đây. Bạn cũng có thể tự nhập hoặc chỉnh sửa.' : 'Nhập ý tưởng hoặc soạn đề bằng Markdown...'} /><div className="editor-footer"><span><span className="dot green" /> Tự lưu trên máy</span><span>Markdown · LaTeX <span className="footer-sep">·</span> {project.statement.length} ký tự</span></div></div><div className="panel preview-panel"><div className="panel-toolbar"><div className="toolbar-title"><BookOpen size={16} /><b>Xem trước</b></div><span className="preview-live"><span className="dot green" /> TRỰC TIẾP</span></div><div className="markdown-preview"><ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>{project.statement || '*Nội dung xem trước sẽ hiện tại đây.*'}</ReactMarkdown></div></div></div>
-    {settings && <section className="panel settings-card problem-themis-settings"><div className="settings-title"><div className="settings-icon orange"><Folder size={18} /></div><div><h3>Tên file Themis</h3><p>AI sẽ đề xuất tên khi tạo đề; bạn có thể chỉnh sửa trước khi xuất bộ Themis. Tiền tố testcase luôn là TEST.</p></div></div><div className="settings-form-grid themis-names"><label><span>Input</span><input className="text-input" value={settings.themisInputFile} onChange={(event) => void updateSettings({ ...settings, themisInputFile: event.target.value })} placeholder="BAI.INP" /></label><label><span>Output</span><input className="text-input" value={settings.themisOutputFile} onChange={(event) => void updateSettings({ ...settings, themisOutputFile: event.target.value })} placeholder="BAI.OUT" /></label></div></section>}
+    <section className="panel settings-card problem-themis-settings"><div className="settings-title"><div className="settings-icon orange"><Folder size={18} /></div><div><h3>Cách nhập và xuất dữ liệu</h3><p>AI nhận diện chế độ từ đề và cập nhật lựa chọn này. Bạn có thể đổi thủ công; lời giải AI sẽ theo chế độ đang chọn.</p></div></div><div className="source-options io-mode-options">
+      <button className={`source-option ${project.ioMode === 'stdin-stdout' ? 'selected' : ''}`} onClick={() => update({ ioMode: 'stdin-stdout', tests: project.tests.map((test) => ({ ...test, outputStale: Boolean(test.output) || test.outputStale })) })}><span className="source-option-copy"><b>Standard Input / Standard Output (stdin/stdout)</b><small>Nhập và xuất dữ liệu qua luồng chuẩn.</small></span><span className="source-radio" /></button>
+      <button className={`source-option ${project.ioMode === 'file-io' ? 'selected' : ''}`} onClick={() => update({ ioMode: 'file-io', tests: project.tests.map((test) => ({ ...test, outputStale: Boolean(test.output) || test.outputStale })) })}><span className="source-option-copy"><b>File Input / File Output</b><small>Đọc dữ liệu từ file và ghi kết quả ra file.</small></span><span className="source-radio" /></button>
+    </div></section>
+    {settings && <section className="panel settings-card problem-themis-settings"><div className="settings-title"><div className="settings-icon orange"><Folder size={18} /></div><div><h3>Tên file Themis</h3><p>AI đề xuất tên khi tạo đề; bạn có thể chỉnh sửa. Bộ test Themis luôn giữ cấu trúc TESTxx với cặp file input/output.</p></div></div><div className="settings-form-grid themis-names"><label><span>Input</span><input className="text-input" value={settings.themisInputFile} onChange={(event) => void updateSettings({ ...settings, themisInputFile: event.target.value })} placeholder="BAI.INP" /></label><label><span>Output</span><input className="text-input" value={settings.themisOutputFile} onChange={(event) => void updateSettings({ ...settings, themisOutputFile: event.target.value })} placeholder="BAI.OUT" /></label></div></section>}
   </div>;
 }
 

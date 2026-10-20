@@ -7,7 +7,7 @@ import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:chil
 import archiver from 'archiver';
 import OpenAI from 'openai';
 import { GoogleGenAI } from '@google/genai';
-import type { AiCachedResult, AiRequest, AiResponse, CompileResult, GeminiModelCatalog, GeminiModelInfo, GeneratorMode, Project, ProgramKind, Provider, RunResult, Settings, TestCase, TestGenerationLog, TestGenerationProgress, TestGroup, TestPlan, TestRunProgress } from '../shared/types';
+import type { AiCachedResult, AiRequest, AiResponse, CompileResult, GeminiModelCatalog, GeminiModelInfo, GeneratorMode, IoMode, Project, ProgramKind, Provider, RunResult, Settings, TestCase, TestGenerationLog, TestGenerationProgress, TestGroup, TestPlan, TestRunProgress } from '../shared/types';
 import { AI_PROMPT_VERSION, AI_PROMPTS } from '../shared/ai-prompts';
 import { createDefaultTestPlan, normalizeProjectJson, TestGroupSchema, TestPlanSchema, statementVersion } from '../shared/validation';
 import { DEFAULT_GENERATOR_TEMPLATE } from '../shared/generator-template';
@@ -33,7 +33,7 @@ int main() {
     return 0;
 }`;
 const DEFAULT_PROJECT: Omit<Project, 'id' | 'name' | 'createdAt' | 'updatedAt'> = {
-  statement: '',
+  statement: '', ioMode: 'stdin-stdout',
   generator: DEFAULT_GENERATOR, solution: DEFAULT_SOLUTION, solutionGuide: '', validator: '', images: [], tests: [],
   testPlan: createDefaultTestPlan(), generationLogs: [], aiCache: {},
   generatorMode: 'random', seed: 2026, timeLimitMs: 2000, oracleSolution: '',
@@ -219,6 +219,24 @@ function runChild(command: string, args: string[], options: { cwd?: string; inpu
       if (streamError.code !== 'EPIPE' && streamError.code !== 'EOF' && streamError.code !== 'ERR_STREAM_DESTROYED') stdinError = streamError;
     }
   });
+}
+
+async function runWithFileIo(executable: string, input: string, timeoutMs: number, ioOptions: { mode: IoMode; inputFile: string; outputFile: string }): Promise<RunResult> {
+  const workingDirectory = await fs.mkdtemp(path.join(app.getPath('temp'), 'cp-test-studio-run-'));
+  const inputFile = safeThemisFilename(ioOptions.inputFile, 'INP', 'BAI');
+  const outputFile = safeThemisFilename(ioOptions.outputFile, 'OUT', 'BAI');
+  try {
+    await fs.writeFile(path.join(workingDirectory, inputFile), input, 'utf8');
+    const result = await runChild(executable, [], { cwd: workingDirectory, timeoutMs, outputLimit: 2 * 1024 * 1024 });
+    if (result.timedOut || result.exitCode !== 0 || result.outputLimited) return result;
+    const outputPath = path.join(workingDirectory, outputFile);
+    const output = await fs.readFile(outputPath, 'utf8').catch(() => null);
+    if (output === null) return { ...result, stderr: result.stderr || `Lời giải không tạo file output ${outputFile}.`, exitCode: 1 };
+    if (Buffer.byteLength(output, 'utf8') > 2 * 1024 * 1024) return { ...result, stderr: 'Output vượt quá giới hạn 2 MB.', outputLimited: true };
+    return { ...result, stdout: output };
+  } finally {
+    await fs.rm(workingDirectory, { recursive: true, force: true });
+  }
 }
 
 async function compiler(): Promise<string> {
@@ -507,9 +525,10 @@ ipcMain.handle('ai:ask', async (_event, request: AiRequest): Promise<AiResponse>
 });
 
 ipcMain.handle('code:compile', async (_event, projectId: string, kind: ProgramKind, source: string) => compile(projectId, kind, source));
-ipcMain.handle('code:run', async (_event, projectId: string, kind: ProgramKind, input: string, args: string[] = [], timeoutMs = 2000) => {
+ipcMain.handle('code:run', async (_event, projectId: string, kind: ProgramKind, input: string, args: string[] = [], timeoutMs = 2000, ioOptions?: { mode: IoMode; inputFile: string; outputFile: string }) => {
   const file = binaryPath(projectId, kind);
   if (!existsSync(file)) throw new Error('Chưa biên dịch chương trình.');
+  if (kind === 'solution' && ioOptions?.mode === 'file-io') return runWithFileIo(file, input, Math.max(100, Math.min(timeoutMs, 30_000)), ioOptions);
   return runChild(file, args.map(String).slice(0, 32), { input, timeoutMs: Math.max(100, Math.min(timeoutMs, 30_000)), outputLimit: 2 * 1024 * 1024, cwd: path.dirname(file) });
 });
 const MAX_GENERATOR_RETRIES = 8;
@@ -637,7 +656,7 @@ ipcMain.handle('tests:regenerate-one', async (_event, projectId: string, rawGrou
 
 const outputTokens = (value: string) => value.trim().split(/\s+/).filter(Boolean).join(' ');
 
-ipcMain.handle('tests:run', async (_event, projectId: string, solution: string, tests: TestCase[], timeLimitMs: number, testIds?: string[], oracleSolution?: string) => {
+ipcMain.handle('tests:run', async (_event, projectId: string, solution: string, tests: TestCase[], timeLimitMs: number, testIds?: string[], oracleSolution?: string, ioOptions?: { mode: IoMode; inputFile: string; outputFile: string }) => {
   if (!safeId(projectId)) throw new Error('Mã dự án không hợp lệ.');
   const compiled = await compile(projectId, 'solution', solution);
   if (!compiled.ok) throw new Error(`Lời giải biên dịch lỗi:\n${compiled.diagnostics}`);
@@ -655,13 +674,17 @@ ipcMain.handle('tests:run', async (_event, projectId: string, solution: string, 
   sendTestRunProgress({ current: 0, total: eligible.length, completed: 0, errors: 0 });
   for (const test of eligible) {
     const timeout = Math.max(100, Math.min(timeLimitMs, 30_000));
-    const result = await runChild(binaryPath(projectId, 'solution'), [], { input: test.input, timeoutMs: timeout, outputLimit: 2 * 1024 * 1024, cwd: path.join(buildRoot(), projectId) });
+    const result = ioOptions?.mode === 'file-io'
+      ? await runWithFileIo(binaryPath(projectId, 'solution'), test.input, timeout, ioOptions)
+      : await runChild(binaryPath(projectId, 'solution'), [], { input: test.input, timeoutMs: timeout, outputLimit: 2 * 1024 * 1024, cwd: path.join(buildRoot(), projectId) });
     if (!result.timedOut && result.exitCode === 0 && !result.outputLimited) {
       let status: TestCase['status'] = 'generated';
       let output = result.stdout;
       let stderr = result.stderr;
       if (oracleSolution?.trim()) {
-        const oracle = await runChild(binaryPath(projectId, 'oracle'), [], { input: test.input, timeoutMs: timeout, outputLimit: 2 * 1024 * 1024, cwd: path.join(buildRoot(), projectId) });
+        const oracle = ioOptions?.mode === 'file-io'
+          ? await runWithFileIo(binaryPath(projectId, 'oracle'), test.input, timeout, ioOptions)
+          : await runChild(binaryPath(projectId, 'oracle'), [], { input: test.input, timeoutMs: timeout, outputLimit: 2 * 1024 * 1024, cwd: path.join(buildRoot(), projectId) });
         if (oracle.timedOut || oracle.exitCode !== 0 || oracle.outputLimited) {
           status = oracle.timedOut ? 'timeout' : 'error';
           stderr = oracle.stderr || 'Oracle chạy lỗi; không thể xác minh output.';

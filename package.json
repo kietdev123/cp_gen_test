@@ -1,6 +1,6 @@
 {
   "name": "cp-test-studio",
-  "version": "1.0.22",
+  "version": "1.0.25",
   "description": "Ứng dụng desktop biên soạn đề và tạo bộ test lập trình thi đấu",
   "main": "out/main/index.js",
   "author": "CP Test Studio",
