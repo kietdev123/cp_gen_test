@@ -88,7 +88,7 @@ const AiCachedResultSchema = z.object({
 
 export const ProjectStorageSchema = z.object({
   id: z.string(), name: z.string(), createdAt: z.string(), updatedAt: z.string(),
-  statement: z.string().default(''), generator: z.string().default(''), solution: z.string().default(''), validator: z.string().default(''),
+  statement: z.string().default(''), generator: z.string().default(''), solution: z.string().default(''), solutionGuide: z.string().default(''), validator: z.string().default(''),
   images: z.array(z.object({ id: z.string(), name: z.string(), mimeType: z.string(), addedAt: z.string() })).default([]),
   tests: z.array(TestCaseSchema).default([]), testPlan: TestPlanSchema.optional(),
   generationLogs: z.array(TestGenerationLogSchema).default([]), aiCache: z.record(z.string(), AiCachedResultSchema).default({}),

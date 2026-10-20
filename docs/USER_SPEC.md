@@ -17,7 +17,7 @@ Người ra đề hoặc giáo viên dạy lập trình thi đấu, cần soạn
 - **Generator:** Nếu chưa có mã dùng được, AI tự tạo bản nháp từ đề và Test Plan. Người dùng có thể xem, sửa hoặc gọi lại AI. Ứng dụng đóng gói `testlib.h`, chạy riêng từng testcase với seed ở `argv[1]` và tùy chọn dạng `--testIndex=...`, `--mode=...`, `--n_min=...`. Generator in đúng một input ra `stdout`. Input được kiểm tra validator tùy chọn và đối chiếu SHA-256; test trùng được thử sinh bù có giới hạn.
 - **Lời giải:** Nếu chưa có mã dùng được, AI tự tạo lời giải tham khảo C++17 từ đề và Test Plan; đề là đặc tả ưu tiên. Người dùng rà soát/chỉnh sửa trước khi biên dịch. Ứng dụng chạy lại trên input đã có và lưu output. Có thể thêm oracle độc lập để đối chiếu token; `GENERATED` có output mới nhưng chưa xác minh, `VERIFIED` khớp oracle.
 - Sửa đề hoặc generator giữ lại testcase cũ và đánh dấu input cũ; sửa lời giải đánh dấu output cũ để chạy lại.
-- Xuất bộ đề gồm Markdown, PDF, DOCX, ZIP Themis và file lời giải `<tên đề>_solution.cpp`.
+- Bước Lời giải tạo và lưu Reference Solution cùng Editorial. Bộ xuất được chia thành `DeBai`, `HuongDan`, `LoiGiai`, `BoTest`; hai thư mục tài liệu có đủ Markdown, PDF, DOCX. Tên file dùng tên Input Themis, không dùng tên bài trong ứng dụng. Nội dung hướng dẫn giải có Editorial và mã Reference Solution; `BoTest` có kế hoạch sinh test, generator và ZIP Themis.
 
 ## Prompt AI
 

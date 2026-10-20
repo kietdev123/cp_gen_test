@@ -118,6 +118,7 @@ export interface Project {
   statement: string;
   generator: string;
   solution: string;
+  solutionGuide: string;
   validator: string;
   images: ProjectImage[];
   tests: TestCase[];

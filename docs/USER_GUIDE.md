@@ -9,6 +9,8 @@ Phát triển bởi **Nguyễn Hoàng Kiệt - THK9 - Trường THPT Chuyên Ngu
 - Chọn **Bài thi** ở sidebar. Bấm **Bài thi mới**, đặt tên rồi mở bài thi trong bảng.
 - Nội dung được lưu tự động trên máy.
 - Nút ở bottom bar đưa bạn sang bước tiếp theo. Thanh bước bên trái cho biết tiến độ.
+- Bước Lời giải tạo đồng thời mã tham khảo C++ và Editorial; bạn có thể chỉnh Markdown, xem trước, rồi xuất vào bốn thư mục `DeBai`, `HuongDan`, `LoiGiai`, `BoTest`. Đề bài và hướng dẫn giải có đủ Markdown, PDF, DOCX; phần hướng dẫn bao gồm Editorial và mã Reference Solution. Tên file xuất lấy từ tên Input trong phần Tên file Themis.
+- Bước 6 hiển thị cấu trúc file xuất theo cây thư mục; bấm tên thư mục để thu gọn hoặc mở danh sách file bên trong.
 
 ## 1. Biên soạn đề
 

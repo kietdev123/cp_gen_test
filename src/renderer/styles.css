@@ -435,4 +435,21 @@ html[data-theme='dark'] .busy-dialog { border-color: #3b475a; }
 .test-metadata,
 .export-review-row pre { font-size: 12px; }
 .advanced-editor summary { font-size: 13px; }
+.editorial-input { display: block; min-height: 210px; resize: vertical; border-top: 1px solid #edf0f4; font: 12px/1.7 var(--mono); }.editorial-preview-title { border-top: 1px solid #edf0f4; }.editorial-preview { min-height: 80px; max-height: 420px; }
+.export-tree { margin-top: 16px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.export-tree-folder + .export-tree-folder { border-top: 1px solid var(--line); }
+.export-tree-folder > summary { min-height: 43px; padding: 8px 12px; display: flex; align-items: center; gap: 8px; cursor: pointer; list-style: none; color: var(--text); }
+.export-tree-folder > summary::-webkit-details-marker { display: none; }
+.export-tree-folder > summary::before { content: '›'; width: 10px; color: #929bad; font-size: 18px; line-height: 1; transition: transform .15s ease; }
+.export-tree-folder[open] > summary::before { transform: rotate(90deg); }
+.export-tree-folder > summary > svg { color: #7d8caf; }
+.export-tree-folder > summary > b { font-size: 11px; }
+.export-tree-folder > summary > small { margin-left: auto; color: #939dad; font-size: 10px; }
+.export-tree-children { margin: 0 0 9px 27px; padding-left: 12px; border-left: 1px solid #e5e9f0; }
+.export-tree-file { position: relative; min-height: 46px; padding: 5px 12px 5px 0; display: flex; align-items: center; gap: 9px; }
+.export-tree-file::before { content: ''; position: absolute; left: -12px; top: 50%; width: 9px; border-top: 1px solid #e5e9f0; }
+.export-tree-file > span:nth-child(2) { display: flex; flex: 1; flex-direction: column; gap: 3px; min-width: 0; }
+.export-tree-file b { overflow: hidden; color: var(--text); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.export-tree-file small { color: #939dad; font-size: 10px; }
+.export-tree-file > svg { flex: 0 0 auto; color: #4c9871; }
 

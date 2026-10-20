@@ -23,7 +23,12 @@ export const AI_PROMPTS = {
     ].join('\n\n'),
 
   solution:
-    'Viết lời giải tham khảo hoàn chỉnh, đúng theo đề và các ràng buộc. Mã phải dùng cú pháp GNU++98 để tương thích GCC 4.8.1 mặc định của Themis; mã này cũng phải biên dịch được như một chương trình C++17 trong CP Test Studio. Không yêu cầu cờ biên dịch riêng. Không dùng tính năng C++11 trở lên như range-based for, lambda, nullptr, initializer list, auto suy luận kiểu, std::string::back()/front(), stoi, to_string, emplace_back hoặc structured bindings. Khi lấy ký tự cuối chuỗi, kiểm tra chuỗi không rỗng rồi dùng s[s.size() - 1]. Dùng Test Plan và generator từ bước trước làm ngữ cảnh để bao phủ dữ liệu; đề bài là đặc tả ưu tiên nếu thông tin mâu thuẫn. Không để TODO hay mã giả. Chỉ trả về mã C++ trong một code block.',
+    [
+      'Bạn là chuyên gia lập trình thi đấu. Phân tích đề bài và tạo đồng thời Reference Solution C++17 để sinh output chuẩn và Editorial bằng tiếng Việt giải thích chính xác thuật toán đã cài trong chính solution đó. Hai phần phải dùng cùng một thuật toán; hãy rà soát và sửa mọi mâu thuẫn trước khi trả lời.',
+      'Solution phải hoàn chỉnh, đúng đề và ràng buộc, dùng cú pháp GNU++98 để tương thích GCC 4.8.1 mặc định của Themis và cũng biên dịch như chương trình C++17, không cần cờ riêng. Không dùng tính năng C++11 trở lên như range-based for, lambda, nullptr, initializer list, auto suy luận kiểu, std::string::back()/front(), stoi, to_string, emplace_back hoặc structured bindings. Khi lấy ký tự cuối chuỗi, kiểm tra chuỗi không rỗng rồi dùng s[s.size() - 1]. Không để TODO hay mã giả.',
+      'Editorial cần có: ý tưởng/quan sát, thuật toán theo đúng các bước trong solution, chứng minh tính đúng đắn, độ phức tạp thời gian và bộ nhớ (nêu rõ ký hiệu), cùng các trường hợp biên quan trọng. Không khẳng định solution đã được biên dịch, chạy hay kiểm chứng bằng thực thi; chỉ nói điều đó nếu có bằng chứng thực tế được cung cấp.',
+      'Dùng Test Plan và generator chỉ làm ngữ cảnh để hiểu dữ liệu cần bao phủ; nếu khác đề thì đề bài là đặc tả có thẩm quyền. Chỉ trả về một JSON hợp lệ, không markdown fence hay văn bản ngoài JSON, theo cấu trúc {"solution":"mã C++ hoàn chỉnh","editorial":"hướng dẫn giải Markdown"}. Escaping chuỗi JSON phải hợp lệ.',
+    ].join('\n\n'),
 
   validator:
     'Viết validator C++17 đọc một input từ stdin, kiểm tra đúng định dạng và mọi ràng buộc của đề. Thoát mã 0 nếu hợp lệ, mã khác 0 nếu không hợp lệ; ghi lý do ngắn vào stderr. Không sửa input, không sinh output đáp án, không để TODO hay mã giả. Chỉ trả mã C++ trong một code block.',
@@ -45,4 +50,4 @@ export const AI_PROMPTS = {
   connectionTest: 'Trả lời ngắn gọn: kết nối thành công.',
 } as const;
 
-export const AI_PROMPT_VERSION = '2.5.0';
+export const AI_PROMPT_VERSION = '2.6.0';

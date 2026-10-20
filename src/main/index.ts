@@ -28,7 +28,7 @@ int main() {
 }`;
 const DEFAULT_PROJECT: Omit<Project, 'id' | 'name' | 'createdAt' | 'updatedAt'> = {
   statement: '',
-  generator: DEFAULT_GENERATOR, solution: DEFAULT_SOLUTION, validator: '', images: [], tests: [],
+  generator: DEFAULT_GENERATOR, solution: DEFAULT_SOLUTION, solutionGuide: '', validator: '', images: [], tests: [],
   testPlan: createDefaultTestPlan(), generationLogs: [], aiCache: {},
   generatorMode: 'random', seed: 2026, timeLimitMs: 2000, oracleSolution: '',
 };
@@ -624,15 +624,74 @@ ipcMain.handle('export:all', async (_event, project: Project) => {
   const choice = await dialog.showOpenDialog(mainWindow!, { title: 'Chọn thư mục lưu bộ đề', properties: ['openDirectory', 'createDirectory'] });
   if (choice.canceled || !choice.filePaths[0]) return null;
   const directory = choice.filePaths[0];
-  const base = safeFileName(project.name);
-  const files = [`${base}.md`, `${base}.pdf`, `${base}.docx`, `${base}_solution.cpp`, `${base}.zip`];
-  await fs.writeFile(path.join(directory, files[0]), `# ${project.name}\n\n${project.statement}`, 'utf8');
-  await fs.writeFile(path.join(directory, files[1]), await createPdf(project));
-  await fs.writeFile(path.join(directory, files[2]), await createDocx(project));
-  await fs.writeFile(path.join(directory, files[3]), project.solution, 'utf8');
-  await createThemisArchive(path.join(directory, files[4]), ready, await readSettings());
+  const exportSettings = await readSettings();
+  const themisInputName = safeThemisFilename(exportSettings.themisInputFile, 'INP', 'BAI').replace(/\.INP$/i, '');
+  const base = safeFileName(themisInputName);
+  const statementProject = { ...project, name: `${base}_DeBai` };
+  const guideContent = [
+    project.solutionGuide?.trim() ?? '',
+    '## Lời giải tham khảo C++17',
+    '```cpp',
+    project.solution.trim(),
+    '```',
+  ].join('\n\n');
+  const guideProject = { ...project, name: `${base}_HuongDan`, statement: guideContent };
+  const directories = ['DeBai', 'HuongDan', 'LoiGiai', 'BoTest'];
+  await Promise.all(directories.map((name) => fs.mkdir(path.join(directory, name), { recursive: true })));
+  const files = [
+    path.join('DeBai', `${base}_DeBai.md`),
+    path.join('DeBai', `${base}_DeBai.pdf`),
+    path.join('DeBai', `${base}_DeBai.docx`),
+    path.join('HuongDan', `${base}_HuongDan.md`),
+    path.join('HuongDan', `${base}_HuongDan.pdf`),
+    path.join('HuongDan', `${base}_HuongDan.docx`),
+    path.join('LoiGiai', `${base}_solution.cpp`),
+    path.join('BoTest', 'KeHoachSinhTest.txt'),
+    path.join('BoTest', 'generator.cpp'),
+    path.join('BoTest', 'bo_test_themis.zip'),
+  ];
+  const testPlanText = formatTestPlan(project, base);
+  await fs.writeFile(path.join(directory, files[0]), `# ${statementProject.name}\n\n${statementProject.statement}`, 'utf8');
+  await fs.writeFile(path.join(directory, files[1]), await createPdf(statementProject));
+  await fs.writeFile(path.join(directory, files[2]), await createDocx(statementProject));
+  await fs.writeFile(path.join(directory, files[3]), `# ${guideProject.name}\n\n${guideProject.statement}`, 'utf8');
+  await fs.writeFile(path.join(directory, files[4]), await createPdf(guideProject));
+  await fs.writeFile(path.join(directory, files[5]), await createDocx(guideProject));
+  await fs.writeFile(path.join(directory, files[6]), project.solution, 'utf8');
+  await fs.writeFile(path.join(directory, files[7]), testPlanText, 'utf8');
+  await fs.writeFile(path.join(directory, files[8]), project.generator, 'utf8');
+  await createThemisArchive(path.join(directory, files[9]), ready, exportSettings);
   return { directory, files };
 });
+
+function formatTestPlan(project: Project, exportBase: string): string {
+  const spec = project.testPlan.problemSpec;
+  const groups = project.testPlan.groups.map((group, index) => {
+    const params = Object.entries(group.params).map(([key, value]) => `${key}=${value}`).join(', ') || 'Không có';
+    return [
+      `${index + 1}. ${group.name}`,
+      `   Chế độ: ${group.mode}`,
+      `   Số testcase: ${group.count}`,
+      `   Mô tả: ${group.description || 'Không có'}`,
+      `   Tham số: ${params}`,
+    ].join('\n');
+  }).join('\n\n');
+  return [
+    `KẾ HOẠCH SINH TEST: ${exportBase}`,
+    `Seed gốc: ${project.seed}`,
+    '',
+    'Tóm tắt bài toán:', spec.summary || 'Chưa có',
+    '',
+    'Định dạng input:', spec.inputFormat || 'Chưa có',
+    '',
+    'Định dạng output:', spec.outputFormat || 'Chưa có',
+    '',
+    'Ràng buộc:', ...(spec.constraints.length ? spec.constraints.map((constraint) => `- ${constraint}`) : ['- Chưa có']),
+    '',
+    'Các nhóm testcase:', groups || 'Chưa có nhóm testcase.',
+    '',
+  ].join('\n');
+}
 
 ipcMain.handle('projects:open-folder', async (_event, id: string) => shell.openPath(projectPath(id)));
 ipcMain.handle('export:open-directory', async (_event, rawDirectory: string) => {

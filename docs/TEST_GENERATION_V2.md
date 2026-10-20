@@ -9,7 +9,7 @@
 5. Viết lời giải, chạy trên các input hiện có và lưu output. Có thể chạy toàn bộ/nhóm hoặc đối chiếu với oracle độc lập.
 6. Duyệt testcase, trạng thái, seed, params và hash; chỉ input/output mới được đưa vào bước export Themis.
 
-Khi mở Test Plan chưa có đặc tả hoặc đã lệch đề, Generator chưa có mã dùng được, hay Lời giải còn trống, ứng dụng tự gọi AI và hiện loading khóa giao diện. Nếu chưa lưu API key, ứng dụng yêu cầu cấu hình trước khi gửi request. Chế độ Quick vẫn dùng một request để tạo plan và generator. Các kết quả AI được cache theo nội dung request, provider, model, định dạng và phiên bản prompt; sinh test, chạy C++ và export đều offline. Bước xuất bộ đề tạo thêm file `<tên đề>_solution.cpp`.
+Khi mở Test Plan chưa có đặc tả hoặc đã lệch đề, Generator chưa có mã dùng được, hay Reference Solution hoặc Editorial còn trống, ứng dụng tự gọi AI và hiện loading khóa giao diện. Nếu chưa lưu API key, ứng dụng yêu cầu cấu hình trước khi gửi request. Chế độ Quick vẫn dùng một request để tạo plan và generator. Các kết quả AI được cache theo nội dung request, provider, model, định dạng và phiên bản prompt; sinh test, chạy C++ và export đều offline. Bước lời giải tạo đồng thời Reference Solution và Editorial. Bộ xuất chia thành `DeBai`, `HuongDan`, `LoiGiai`, `BoTest`; `DeBai` và `HuongDan` có đủ Markdown, PDF, DOCX. Tiền tố file xuất lấy theo tên Input Themis.
 
 ## Dữ liệu và trạng thái
 

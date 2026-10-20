@@ -11,7 +11,7 @@ Checklist này dành cho người dùng kiểm tra ứng dụng sau khi build. K
 - [ ] Có API key: chạy **AI phân tích đề** và **Quick: plan + generator**; xem JSON đã được kiểm tra schema và rà soát nội dung trước khi dùng.
 - [ ] Chưa có key: gọi tính năng AI, lưu key trong modal để tiếp tục; Cancel không làm mất nội dung đã nhập.
 - [ ] Vào Test Plan mới/rỗng: AI tự phân tích; loading ở giữa khóa tương tác. Nếu chưa có key, nhập key để tiếp tục hoặc hủy.
-- [ ] Vào Generator với template mặc định và Lời giải còn trống: AI tự tạo mã không hỏi dùng AI; loading ở giữa khóa tương tác.
+- [ ] Vào Generator với template mặc định và Lời giải/Editorial còn trống: AI tự tạo Reference Solution cùng hướng dẫn giải không hỏi dùng AI; loading ở giữa khóa tương tác.
 
 ## 2. Generator, validator và sinh testcase
 
@@ -35,7 +35,8 @@ Checklist này dành cho người dùng kiểm tra ứng dụng sau khi build. K
 - [ ] Thêm oracle độc lập: output khớp theo token thành `VERIFIED`; mismatch hoặc oracle lỗi không được đánh dấu xác minh.
 - [ ] Mục export hiển thị input/output có thể xuất và số bản ghi lỗi, trùng, thiếu output hoặc cũ bị bỏ qua.
 - [ ] Xác nhận ZIP Themis dùng tên gốc theo file Input (ví dụ `CHANLE/TEST01/CHANLE.INP`) và file Output lấy theo tên đã đặt ở bước 1; tiền tố luôn là `TEST`.
-- [ ] Xuất Markdown, DOCX, PDF, `<tên đề>_solution.cpp` và ZIP; kiểm tra Unicode, công thức và bố cục.
+- [ ] Xuất và xác nhận có bốn thư mục `DeBai`, `HuongDan`, `LoiGiai`, `BoTest`; hai bộ tài liệu đủ Markdown, DOCX, PDF. Kiểm tra Editorial và Reference Solution trong hướng dẫn, cùng kế hoạch sinh test, generator và ZIP Themis.
+- [ ] Ở bước 6, kiểm tra cây thư mục hiển thị đúng các file theo bốn thư mục và có thể thu gọn/mở từng nhánh.
 
 ## 4. Lỗi thường gặp
 
