@@ -96,6 +96,8 @@ button:disabled { opacity: .48; cursor: not-allowed; }
 .notice span { flex: 1; line-height: 1.45; }
 .notice b { color: #74542a; }
 .page-body { padding: 0 38px 23px; flex: 1; min-width: 0; }
+.document-page-body { display: flex; padding-top: 26px; padding-bottom: 26px; }
+.document-page-body .help-guide { flex: 1; min-height: 0; width: 100%; max-width: 980px; margin: 0 auto; overflow: auto; }
 .footer-sep { color: #c7cbd4; padding: 0 3px; }
 
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); }

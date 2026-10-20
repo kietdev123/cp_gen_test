@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { Project, Settings } from '../../shared/types';
 
-export type Page = 'projects' | 'problem' | 'test-plan' | 'generator' | 'solution' | 'runner' | 'export' | 'settings' | 'help';
+export type Page = 'projects' | 'problem' | 'test-plan' | 'generator' | 'solution' | 'runner' | 'export' | 'settings' | 'help' | 'release-notes';
 interface AppState {
   projects: Project[];
   active: Project | null;

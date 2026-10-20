@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import packageJson from '../../package.json';
 import appIcon from '../../build/icon.svg';
 import userGuideMarkdown from '../../docs/USER_GUIDE.md?raw';
+import releaseNotesMarkdown from '../../docs/RELEASE_NOTES.md?raw';
 import ReactMarkdown from 'react-markdown';
 import Editor, { loader } from '@monaco-editor/react';
 import * as monaco from 'monaco-editor/editor/editor.api.js';
@@ -31,6 +32,7 @@ const nav: { id: Page; label: string; icon: typeof FolderOpen; section?: string 
   { id: 'projects', label: 'Bài thi', icon: FolderOpen, section: 'KHÔNG GIAN' },
   { id: 'settings', label: 'Cài đặt', icon: SettingsIcon, section: 'ỨNG DỤNG' },
   { id: 'help', label: 'Hướng dẫn sử dụng', icon: CircleHelp, section: 'TRỢ GIÚP' },
+  { id: 'release-notes', label: 'Ghi chú phát hành', icon: FileText },
 ];
 
 const workflowSteps: { id: Extract<Page, 'problem' | 'test-plan' | 'generator' | 'solution' | 'runner' | 'export'>; label: string; description: string; icon: typeof BookOpen }[] = [
@@ -99,6 +101,7 @@ const pageInfo: Record<Page, { title: string; subtitle: string }> = {
   export: { title: 'Xuất bộ đề', subtitle: 'Lưu toàn bộ đề thi và bộ testcase thành một file ZIP.' },
   settings: { title: 'Cài đặt', subtitle: 'Thiết lập AI, compiler và giao diện theo cách bạn làm việc.' },
   help: { title: 'Hướng dẫn sử dụng', subtitle: 'Các bước tạo đề, sinh testcase, kiểm tra và xuất bộ đề.' },
+  'release-notes': { title: 'Ghi chú phát hành', subtitle: 'Các mốc phát triển và thay đổi đáng chú ý của CP Test Studio.' },
 };
 
 function App() {
@@ -732,10 +735,12 @@ function App() {
     if (page === 'runner') return active ? <Runner project={active} busy={busy} progress={runProgress} runAll={runAllTests} clear={() => updateActive({ tests: [] })} regenerate={regenerateTestCase} remove={(test) => updateActive({ tests: active.tests.filter((item) => item.id !== test.id) })} runGroup={runTestGroup} /> : <EmptyProject create={() => setProjectModal(true)} />;
     if (page === 'export') return active ? <Export project={active} themisInputFile={settings?.themisInputFile ?? 'BAI.INP'} busy={busy} directory={exportDirectory} exported={exportedProjectId === active.id} exportAgain={exportAllFiles} openSavedDirectory={openSavedExportDirectory} /> : <EmptyProject create={() => setProjectModal(true)} />;
     if (page === 'help') return <HelpPage />;
+    if (page === 'release-notes') return <ReleaseNotesPage />;
     return <SettingsPage settings={settings} hasKeys={hasKeys} aiKey={aiKey} setAiKey={setAiKey} saveKey={saveKey} update={updateSettings} busy={busy} compilerAvailable={compilerAvailable} compilerName={compilerName} test={async () => { startBusy('Đang kiểm tra kết nối AI…'); try { const result = await window.studio.testAiConnection({ provider: settings?.provider, prompt: AI_PROMPTS.connectionTest }); if (!operationWasCancelled.current) notify(`Kết nối thành công: ${result}`, 'success'); } catch (error) { if (!operationWasCancelled.current) notify((error as Error).message, 'error'); } finally { setBusy(''); } }} removeKey={async (provider) => { await window.studio.removeApiKey(provider); setHasKeys({ ...hasKeys, [provider]: false }); notify('Đã xóa API key.'); }} chooseCompiler={async () => { const file = await window.studio.chooseCompiler(); if (file && settings) { const next = { ...settings, compilerPath: file }; await updateSettings(next); const status = await window.studio.getStatus(); setCompilerAvailable(status.compilerAvailable); setCompilerName(status.compiler); } }} chooseDocumentTools={async () => { const folder = await window.studio.chooseDocumentTools(); if (folder && settings) await updateSettings({ ...settings, documentToolsPath: folder }); }} onClearData={() => setClearDataModal(true)} />;
   };
 
   const currentPage = pageInfo[page];
+  const isDocumentPage = page === 'help' || page === 'release-notes';
   const workflowIndex = workflowSteps.findIndex((step) => step.id === page);
   const stepDone = (step: typeof workflowSteps[number]) => active ? isStepDone(active, step) : false;
   const canAccessStep = (index: number) => Boolean(active && workflowSteps.slice(0, index).every((step) => isStepDone(active, step)));
@@ -826,10 +831,10 @@ function App() {
     </aside>
 
     <main className="main-area">
-      <section className="page-heading"><div>{page === 'problem' ? <nav className="page-breadcrumb" aria-label="Điều hướng"><button onClick={() => setPage('projects')}>Bài thi</button><span>/</span><span>Soạn đề</span>{active && <><span>/</span><b aria-current="page">{visibleProjectName(active.name)}</b></>}</nav> : <><div className="eyebrow">{!active && 'KHÔNG GIAN SOẠN ĐỀ'}</div><h1>{currentPage.title}</h1><p>{currentPage.subtitle}</p></>}</div>{page !== 'settings' && page !== 'problem' && <div className="heading-actions"><button className="button button-primary" onClick={() => setProjectModal(true)}><Plus size={17} /> Bài thi mới</button></div>}</section>
-      {compilerAvailable === false && page !== 'settings' && <button className="notice notice-warning" onClick={() => setPage('settings')}><TriangleAlert size={17} /><span><b>Chưa có compiler C++ bên ngoài.</b> Hãy mở Cài đặt và import bộ GCC bằng cách chọn g++.exe đã giải nén.</span><ArrowRight size={15} /></button>}
+      {!isDocumentPage && <section className="page-heading"><div>{page === 'problem' ? <nav className="page-breadcrumb" aria-label="Điều hướng"><button onClick={() => setPage('projects')}>Bài thi</button><span>/</span><span>Soạn đề</span>{active && <><span>/</span><b aria-current="page">{visibleProjectName(active.name)}</b></>}</nav> : <><div className="eyebrow">{!active && 'KHÔNG GIAN SOẠN ĐỀ'}</div><h1>{currentPage.title}</h1><p>{currentPage.subtitle}</p></>}</div>{page !== 'settings' && page !== 'problem' && <div className="heading-actions"><button className="button button-primary" onClick={() => setProjectModal(true)}><Plus size={17} /> Bài thi mới</button></div>}</section>}
+      {!isDocumentPage && compilerAvailable === false && page !== 'settings' && <button className="notice notice-warning" onClick={() => setPage('settings')}><TriangleAlert size={17} /><span><b>Chưa có compiler C++ bên ngoài.</b> Hãy mở Cài đặt và import bộ GCC bằng cách chọn g++.exe đã giải nén.</span><ArrowRight size={15} /></button>}
       {page === 'problem' && active && <input ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={(event) => pickImage(event.target.files?.[0])} />}
-      <div className={`page-body ${isWorkflowPage(page) && active ? 'workflow-page-body' : ''}`}>
+      <div className={`page-body ${isWorkflowPage(page) && active ? 'workflow-page-body' : ''} ${isDocumentPage ? 'document-page-body' : ''}`}>
         {isWorkflowPage(page) && active ? <div className="workflow-layout">
           <aside className="workflow-stepper" aria-label="Các bước soạn đề">
             <div className="stepper-heading"><span>TIẾN ĐỘ SOẠN ĐỀ</span><b>Bước {workflowIndex + 1} / {workflowSteps.length}</b></div>
@@ -914,6 +919,10 @@ function Projects({ projects, openProject, create, remove }: { projects: Project
 
 function HelpPage() {
   return <article className="panel markdown-preview help-guide"><ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>{userGuideMarkdown}</ReactMarkdown></article>;
+}
+
+function ReleaseNotesPage() {
+  return <article className="panel markdown-preview help-guide"><ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>{releaseNotesMarkdown}</ReactMarkdown></article>;
 }
 
 function EmptyProject({ create }: { create: () => void }) { return <div className="empty-state"><div className="empty-icon large"><FolderOpen size={26} /></div><h3>Chưa mở bài thi</h3><p>Tạo một bài thi để bắt đầu nhập đề, viết mã và tạo testcase.</p><button className="button button-primary" onClick={create}><Plus size={16} /> Tạo bài thi</button></div>; }

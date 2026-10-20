@@ -4,6 +4,8 @@ CP Test Studio giúp soạn đề, tạo testcase bằng generator C++17, kiểm
 
 Phát triển bởi **Nguyễn Hoàng Kiệt - THK9 - Trường THPT Chuyên Nguyên Quang Diêu, tỉnh Đồng Tháp**.
 
+Mở **Hướng dẫn sử dụng** hoặc **Ghi chú phát hành** trong mục **Trợ giúp** ở sidebar để xem tài liệu trong panel chính.
+
 ## Bắt đầu
 
 - Chọn **Bài thi** ở sidebar. Bấm **Bài thi mới**, đặt tên rồi mở bài thi trong bảng.
@@ -48,6 +50,7 @@ Phát triển bởi **Nguyễn Hoàng Kiệt - THK9 - Trường THPT Chuyên Ngu
 
 ## Cài đặt và giao diện
 
-- **Cài đặt → Trợ lý AI**: chọn OpenAI hoặc Gemini, model và lưu API key.
+- **Cài đặt → Trợ lý AI**: lưu API key Google Gemini và nhập model mặc định. Bấm một nhãn gợi ý để điền model vào ô; chọn **+N model xem thêm** để mở danh sách đầy đủ.
+- API key miễn phí có thể gặp giới hạn quota hoặc độ ổn định thay đổi; model mới hay đang có nhiều người dùng có thể quá tải, phản hồi chậm hoặc từ chối yêu cầu. Hãy kiểm tra nội dung AI và lưu lại trước khi sử dụng chính thức.
 - **Cài đặt → Compiler C++**: xem trạng thái compiler hoặc chọn `g++.exe` khác.
 - Dùng nút ở sidebar để thu gọn/mở rộng sidebar và chuyển giữa giao diện sáng/tối.
