@@ -96,7 +96,7 @@ const pageInfo: Record<Page, { title: string; subtitle: string }> = {
   generator: { title: 'Sinh testcase', subtitle: 'Tự viết generator C++17, biên dịch và tạo dữ liệu đầu vào.' },
   solution: { title: 'Lời giải chuẩn', subtitle: 'Biên dịch, chạy thử và tạo output bằng chương trình C++.' },
   runner: { title: 'Chạy & kiểm tra', subtitle: 'Chạy lời giải trên bộ test và xem trạng thái từng trường hợp.' },
-  export: { title: 'Xuất bộ đề', subtitle: 'Tạo ZIP theo cấu trúc thư mục Themis hoặc xuất bản đề.' },
+  export: { title: 'Xuất bộ đề', subtitle: 'Lưu toàn bộ đề thi và bộ testcase thành một file ZIP.' },
   settings: { title: 'Cài đặt', subtitle: 'Thiết lập AI, compiler và giao diện theo cách bạn làm việc.' },
   help: { title: 'Hướng dẫn sử dụng', subtitle: 'Các bước tạo đề, sinh testcase, kiểm tra và xuất bộ đề.' },
 };
@@ -132,6 +132,7 @@ function App() {
   const fileInput = useRef<HTMLInputElement>(null);
   const ideaPromptRef = useRef<HTMLTextAreaElement>(null);
   const autoRunnerKey = useRef('');
+  const autoExportKey = useRef('');
   const autoTestPlanKey = useRef('');
   const autoCodeKey = useRef('');
   const pendingAiResolve = useRef<((value: string) => void) | null>(null);
@@ -390,8 +391,8 @@ function App() {
       if (result) {
         setExportDirectory(result.directory);
         setExportedProjectId(active.id);
-        notify(`Đã xuất ${result.files.length} tệp vào ${result.directory}.`);
-      } else notify('Đã hủy chọn thư mục xuất.', 'info');
+        notify(`Đã tạo ${result.files[0]} trong ${result.directory}.`);
+      }
     } catch (error) { notify((error as Error).message, 'error'); }
     finally { setBusy(''); }
   };
@@ -779,6 +780,18 @@ function App() {
     const next = workflowSteps[workflowIndex + 1];
     if (next) setPage(next.id);
   };
+
+  useEffect(() => {
+    if (page !== 'export') {
+      autoExportKey.current = '';
+      return;
+    }
+    if (!active || busy || exportedProjectId === active.id) return;
+    const runnerStep = workflowSteps.find((step) => step.id === 'runner');
+    if (!runnerStep || !isStepDone(active, runnerStep) || autoExportKey.current === active.id) return;
+    autoExportKey.current = active.id;
+    void exportAllFiles();
+  }, [active?.id, page, busy, exportedProjectId]);
   return <>
     <div className={`app-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`} inert={busy ? true : undefined} aria-busy={Boolean(busy)}>
     <aside className="sidebar">
@@ -1071,7 +1084,7 @@ function Export({ project, themisInputFile, busy, directory, exported, exportAga
     <div className="export-tree" aria-label="Cấu trúc bộ file sẽ xuất">{fileTree.map((folder) => <details className="export-tree-folder" key={folder.name} open><summary><Folder size={16} /><b>{folder.name}</b><small>{folder.files.length} file</small></summary><div className="export-tree-children">{folder.files.map((file) => <div className="export-tree-file" key={file.name}><span className={`export-format-icon ${file.kind}`}>{file.format}</span><span><b>{file.name}</b><small>{file.detail}</small></span>{exported && <Check size={16} />}</div>)}</div></details>)}</div>
     {reviewable.length > 0 && <details className="export-review"><summary>Xem {reviewable.length} input/output có thể xuất</summary>{reviewable.map((test, index) => <div className="export-review-row" key={test.id}><b>{test.name || `TEST${index + 1}`} · {test.status === 'verified' ? 'VERIFIED' : 'chưa xác minh'}</b><div><pre>{test.input}</pre><pre>{test.output || '(output rỗng)'}</pre></div></div>)}</details>}
     {directory && <div className="export-directory"><FolderOpen size={16} /><span><small>ĐÃ LƯU TẠI</small><b>{directory}</b></span></div>}
-    <div className="export-actions">{exported ? <><button className="button button-primary" onClick={openSavedDirectory} disabled={!directory}><FolderOpen size={16} /> Mở thư mục đã lưu</button><button className="button button-secondary" onClick={exportAgain} disabled={busy === 'export' || !reviewable.length}><RefreshCw size={15} /> Xuất lại</button></> : <button className="button button-primary" onClick={exportAgain} disabled={busy === 'export' || !reviewable.length}><Download size={16} /> Xác nhận và xuất bộ đề</button>}<span>{reviewable.length} testcase sẽ được xuất</span></div>
+    <div className="export-actions">{exported ? <><button className="button button-primary" onClick={openSavedDirectory} disabled={!directory}><FolderOpen size={16} /> Mở thư mục đã lưu</button><button className="button button-secondary" onClick={exportAgain} disabled={busy === 'export' || !reviewable.length}><RefreshCw size={15} /> Tạo lại ZIP</button></> : <button className="button button-primary" onClick={exportAgain} disabled={busy === 'export' || !reviewable.length}><Download size={16} /> Chọn vị trí lưu ZIP</button>}<span>{reviewable.length} testcase sẽ được đóng gói</span></div>
   </section></div>;
 }
 

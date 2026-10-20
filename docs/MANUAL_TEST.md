@@ -37,6 +37,9 @@ Checklist này dành cho người dùng kiểm tra ứng dụng sau khi build. K
 - [ ] Xác nhận ZIP Themis dùng tên gốc theo file Input (ví dụ `CHANLE/TEST01/CHANLE.INP`) và file Output lấy theo tên đã đặt ở bước 1; tiền tố luôn là `TEST`.
 - [ ] Xuất và xác nhận có bốn thư mục `DeBai`, `HuongDan`, `LoiGiai`, `BoTest`; hai bộ tài liệu đủ Markdown, DOCX, PDF. Kiểm tra Editorial và Reference Solution trong hướng dẫn, cùng kế hoạch sinh test, generator và ZIP Themis.
 - [ ] Ở bước 6, kiểm tra cây thư mục hiển thị đúng các file theo bốn thư mục và có thể thu gọn/mở từng nhánh.
+- [ ] Vào bước 6, xác nhận hộp thoại lưu ZIP tự mở, không xuất hiện hộp thoại xác nhận testcase, và file có dạng `CP_Test_Studio_<Tên file Themis>_<Timestamp>.zip`.
+- [ ] Xuất hướng dẫn có các dòng đơn và bảng Markdown sang PDF/DOCX; xác nhận xuống dòng và bảng vẫn được giữ như trong file Markdown.
+- [ ] Xuất đề bài có các dòng đơn và bảng Markdown sang PDF/DOCX, cả trong ZIP bước 6 lẫn xuất riêng; xác nhận xuống dòng và bảng được giữ.
 
 ## 4. Lỗi thường gặp
 

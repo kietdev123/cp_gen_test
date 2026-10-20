@@ -609,24 +609,31 @@ ipcMain.handle('export:markdown', async (_event, project: Project) => {
 ipcMain.handle('export:pdf', async (_event, project: Project) => {
   const choice = await dialog.showSaveDialog(mainWindow!, { title: 'Xuất đề PDF', defaultPath: `${project.name.replace(/[\\/:*?"<>|]/g, '_')}.pdf`, filters: [{ name: 'PDF', extensions: ['pdf'] }] });
   if (choice.canceled || !choice.filePath) return null;
-  await fs.writeFile(choice.filePath, await createPdf(project)); return choice.filePath;
+  await fs.writeFile(choice.filePath, await createPdf(project, true)); return choice.filePath;
 });
 ipcMain.handle('export:docx', async (_event, project: Project) => {
   const choice = await dialog.showSaveDialog(mainWindow!, { title: 'Xuất đề DOCX', defaultPath: `${project.name.replace(/[\\/:*?"<>|]/g, '_')}.docx`, filters: [{ name: 'Word', extensions: ['docx'] }] });
   if (choice.canceled || !choice.filePath) return null;
-  await fs.writeFile(choice.filePath, await createDocx(project));
+  await fs.writeFile(choice.filePath, await createDocx(project, true));
   return choice.filePath;
 });
 ipcMain.handle('export:all', async (_event, project: Project) => {
   const ready = exportableTests(project.tests);
   if (!ready.length) throw new Error('Chưa có testcase hợp lệ với output mới để xuất.');
-  if (!(await confirmTestExport(project.tests, ready))) return null;
-  const choice = await dialog.showOpenDialog(mainWindow!, { title: 'Chọn thư mục lưu bộ đề', properties: ['openDirectory', 'createDirectory'] });
-  if (choice.canceled || !choice.filePaths[0]) return null;
-  const directory = choice.filePaths[0];
   const exportSettings = await readSettings();
   const themisInputName = safeThemisFilename(exportSettings.themisInputFile, 'INP', 'BAI').replace(/\.INP$/i, '');
   const base = safeFileName(themisInputName);
+  const timestamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
+  const archiveName = `CP_Test_Studio_${base}_${timestamp}.zip`;
+  const choice = await dialog.showSaveDialog(mainWindow!, {
+    title: 'Lưu bộ đề CP Test Studio',
+    defaultPath: path.join(app.getPath('downloads'), archiveName),
+    filters: [{ name: 'Tệp ZIP', extensions: ['zip'] }],
+  });
+  if (choice.canceled || !choice.filePath) return null;
+
+  const stagingDirectory = await fs.mkdtemp(path.join(app.getPath('temp'), 'cp-test-studio-export-'));
+  try {
   const statementProject = { ...project, name: `${base}_DeBai` };
   const guideContent = [
     project.solutionGuide?.trim() ?? '',
@@ -637,7 +644,7 @@ ipcMain.handle('export:all', async (_event, project: Project) => {
   ].join('\n\n');
   const guideProject = { ...project, name: `${base}_HuongDan`, statement: guideContent };
   const directories = ['DeBai', 'HuongDan', 'LoiGiai', 'BoTest'];
-  await Promise.all(directories.map((name) => fs.mkdir(path.join(directory, name), { recursive: true })));
+  await Promise.all(directories.map((name) => fs.mkdir(path.join(stagingDirectory, name), { recursive: true })));
   const files = [
     path.join('DeBai', `${base}_DeBai.md`),
     path.join('DeBai', `${base}_DeBai.pdf`),
@@ -651,18 +658,35 @@ ipcMain.handle('export:all', async (_event, project: Project) => {
     path.join('BoTest', 'bo_test_themis.zip'),
   ];
   const testPlanText = formatTestPlan(project, base);
-  await fs.writeFile(path.join(directory, files[0]), `# ${statementProject.name}\n\n${statementProject.statement}`, 'utf8');
-  await fs.writeFile(path.join(directory, files[1]), await createPdf(statementProject));
-  await fs.writeFile(path.join(directory, files[2]), await createDocx(statementProject));
-  await fs.writeFile(path.join(directory, files[3]), `# ${guideProject.name}\n\n${guideProject.statement}`, 'utf8');
-  await fs.writeFile(path.join(directory, files[4]), await createPdf(guideProject));
-  await fs.writeFile(path.join(directory, files[5]), await createDocx(guideProject));
-  await fs.writeFile(path.join(directory, files[6]), project.solution, 'utf8');
-  await fs.writeFile(path.join(directory, files[7]), testPlanText, 'utf8');
-  await fs.writeFile(path.join(directory, files[8]), project.generator, 'utf8');
-  await createThemisArchive(path.join(directory, files[9]), ready, exportSettings);
-  return { directory, files };
+  await fs.writeFile(path.join(stagingDirectory, files[0]), `# ${statementProject.name}\n\n${statementProject.statement}`, 'utf8');
+  await fs.writeFile(path.join(stagingDirectory, files[1]), await createPdf(statementProject, true));
+  await fs.writeFile(path.join(stagingDirectory, files[2]), await createDocx(statementProject, true));
+  await fs.writeFile(path.join(stagingDirectory, files[3]), `# ${guideProject.name}\n\n${guideProject.statement}`, 'utf8');
+  await fs.writeFile(path.join(stagingDirectory, files[4]), await createPdf(guideProject, true));
+  await fs.writeFile(path.join(stagingDirectory, files[5]), await createDocx(guideProject, true));
+  await fs.writeFile(path.join(stagingDirectory, files[6]), project.solution, 'utf8');
+  await fs.writeFile(path.join(stagingDirectory, files[7]), testPlanText, 'utf8');
+  await fs.writeFile(path.join(stagingDirectory, files[8]), project.generator, 'utf8');
+  await createThemisArchive(path.join(stagingDirectory, files[9]), ready, exportSettings);
+  await createDirectoryArchive(choice.filePath, stagingDirectory);
+  return { directory: path.dirname(choice.filePath), files: [path.basename(choice.filePath)] };
+  } finally {
+    await fs.rm(stagingDirectory, { recursive: true, force: true });
+  }
 });
+
+async function createDirectoryArchive(filePath: string, directory: string): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const output = createWriteStream(filePath);
+    const archive = archiver('zip', { zlib: { level: 9 } });
+    output.once('close', resolve);
+    output.once('error', reject);
+    archive.once('error', reject);
+    archive.pipe(output);
+    archive.directory(directory, false);
+    void archive.finalize();
+  });
+}
 
 function formatTestPlan(project: Project, exportBase: string): string {
   const spec = project.testPlan.problemSpec;
@@ -708,15 +732,15 @@ function safeFileName(value: string) {
   return value.replace(/[\\/:*?"<>|]/g, '_').trim().replace(/[. ]+$/g, '') || 'De-bai';
 }
 
-async function createPdf(project: Project): Promise<Buffer> {
-  return convertMarkdown(project, 'pdf');
+async function createPdf(project: Project, preserveLineBreaks = false): Promise<Buffer> {
+  return convertMarkdown(project, 'pdf', preserveLineBreaks);
 }
 
-async function createDocx(project: Project): Promise<Buffer> {
-  return convertMarkdown(project, 'docx');
+async function createDocx(project: Project, preserveLineBreaks = false): Promise<Buffer> {
+  return convertMarkdown(project, 'docx', preserveLineBreaks);
 }
 
-async function convertMarkdown(project: Project, format: 'pdf' | 'docx'): Promise<Buffer> {
+async function convertMarkdown(project: Project, format: 'pdf' | 'docx', preserveLineBreaks = false): Promise<Buffer> {
   const settings = await readSettings();
   const root = settings.documentToolsPath?.trim() || (app.isPackaged
     ? path.join(process.resourcesPath, 'tools', 'document-export')
@@ -735,7 +759,7 @@ async function convertMarkdown(project: Project, format: 'pdf' | 'docx'): Promis
   const outputFile = path.join(workingDirectory, `statement.${format}`);
   const documentTitle = project.name.replace(/[\r\n]/g, ' ');
   const args = [
-    '--from=markdown',
+    `--from=${preserveLineBreaks ? 'markdown+hard_line_breaks+pipe_tables' : 'markdown'}`,
     `--lua-filter=${filter}`,
     '--variable=papersize:a4',
     `--output=${outputFile}`,
@@ -746,7 +770,8 @@ async function convertMarkdown(project: Project, format: 'pdf' | 'docx'): Promis
 
   try {
     const markdown = '# ' + documentTitle + '\n\n' + project.statement;
-    await fs.writeFile(sourceFile, markdown, 'utf8');
+    const exportMarkdown = preserveLineBreaks ? normalizePipeTablesForExport(markdown) : markdown;
+    await fs.writeFile(sourceFile, exportMarkdown, 'utf8');
     const result = await runChild(pandoc, args, { cwd: workingDirectory, timeoutMs: 120_000, outputLimit: 1_000_000 });
     if (result.exitCode !== 0 || result.timedOut) {
       const detail = (result.stderr || result.stdout).trim();
@@ -756,6 +781,43 @@ async function convertMarkdown(project: Project, format: 'pdf' | 'docx'): Promis
   } finally {
     await fs.rm(workingDirectory, { recursive: true, force: true });
   }
+}
+
+function normalizePipeTablesForExport(markdown: string): string {
+  const lines = markdown.replace(/\r\n/g, '\n').split('\n');
+  const output: string[] = [];
+  const isDivider = (line: string) => /^\s*\|?\s*:?-{1,}:?\s*(?:\|\s*:?-{1,}:?\s*)+\|?\s*$/.test(line);
+  let inCodeFence = false;
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (/^\s*(```|~~~)/.test(line)) {
+      inCodeFence = !inCodeFence;
+      output.push(line);
+      continue;
+    }
+    if (!inCodeFence && isDivider(line) && index > 0 && lines[index - 1].includes('|')) {
+      const header = lines[index - 1].trim();
+      const firstPipe = header.indexOf('|');
+      const label = header.slice(0, firstPipe).trim();
+      const tableHeader = header.slice(firstPipe).trim();
+      output.pop();
+      if (label) output.push(label);
+      if (output.length && output[output.length - 1] !== '') output.push('');
+      output.push(tableHeader, line.trim());
+      index += 1;
+      while (index < lines.length && lines[index].includes('|') && lines[index].trim() !== '') {
+        output.push(lines[index].trim());
+        index += 1;
+      }
+      if (index < lines.length) {
+        if (output[output.length - 1] !== '') output.push('');
+        output.push(lines[index]);
+      }
+      continue;
+    }
+    output.push(line);
+  }
+  return output.join('\n');
 }
 function exportableTests(tests: TestCase[]) {
   return tests.filter((test) => ['generated', 'verified', 'passed'].includes(test.status) && !test.inputStale && !test.outputStale);
