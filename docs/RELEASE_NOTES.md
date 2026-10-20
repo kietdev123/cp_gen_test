@@ -2,10 +2,11 @@
 
 Nhật ký dưới đây ghi nội dung theo từng version được tìm thấy trong lịch sử `package.json` của Git. Repo không có tag hoặc bằng chứng cho biết các version này đã được phát hành thành bản cài đặt, vì vậy đây là ghi chú theo version trong mã nguồn.
 
-## 1.0.22 — cập nhật lúc 20/10/2026 21:42:21 +07:00
+## 1.0.22 — cập nhật lúc 20/10/2026 21:49:14 +07:00
 
 - Trang **Hướng dẫn sử dụng** và **Ghi chú phát hành** chỉ hiển thị panel nội dung chính; bỏ tiêu đề trang, nút tạo bài thi và cảnh báo compiler khỏi hai trang tài liệu.
 - Mở rộng panel tài liệu theo chiều cao vùng nội dung để có thể cuộn bên trong.
+- Bổ sung liên kết repository GitHub và thông tin người dùng có thể clone mã nguồn để tự phát triển.
 
 ## 1.0.21 — 20/10/2026 21:37:43 +07:00
 

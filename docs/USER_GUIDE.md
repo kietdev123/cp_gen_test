@@ -4,6 +4,10 @@ CP Test Studio giúp soạn đề, tạo testcase bằng generator C++17, kiểm
 
 Phát triển bởi **Nguyễn Hoàng Kiệt - THK9 - Trường THPT Chuyên Nguyên Quang Diêu, tỉnh Đồng Tháp**.
 
+## Mã nguồn mở
+
+Mã nguồn CP Test Studio được công khai trên [GitHub](https://github.com/kietdev123/cp_gen_test). Bạn có thể clone repository về để tự phát triển hoặc tùy chỉnh ứng dụng.
+
 Mở **Hướng dẫn sử dụng** hoặc **Ghi chú phát hành** trong mục **Trợ giúp** ở sidebar để xem tài liệu trong panel chính.
 
 ## Bắt đầu
