@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { AiRequest, AppApi, Project, ProgramKind, Provider, Settings, TestCase, TestGenerationProgress, TestGroup, TestPlan, TestRunProgress } from '../shared/types';
+import type { AiRequest, AppApi, GeminiModelCatalog, Project, ProgramKind, Provider, Settings, TestCase, TestGenerationProgress, TestGroup, TestPlan, TestRunProgress } from '../shared/types';
 
 const api: AppApi = {
   getStatus: () => ipcRenderer.invoke('app:status'),
@@ -11,6 +11,9 @@ const api: AppApi = {
   saveProjectImage: (projectId: string, name: string, mimeType: string, data: string) => ipcRenderer.invoke('projects:image:save', projectId, name, mimeType, data),
   readProjectImage: (projectId: string, imageId: string) => ipcRenderer.invoke('projects:image:read', projectId, imageId),
   getSettings: () => ipcRenderer.invoke('settings:get'),
+  getGeminiModelCatalog: (): Promise<GeminiModelCatalog> => ipcRenderer.invoke('settings:gemini-model-catalog'),
+  resetOperationCancellation: () => ipcRenderer.invoke('operation:reset-cancellation'),
+  cancelCurrentOperation: () => ipcRenderer.invoke('operation:cancel-current'),
   saveSettings: (settings: Settings) => ipcRenderer.invoke('settings:save', settings),
   saveApiKey: (provider: Provider, key: string) => ipcRenderer.invoke('settings:key:save', provider, key),
   removeApiKey: (provider: Provider) => ipcRenderer.invoke('settings:key:remove', provider),

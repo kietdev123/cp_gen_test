@@ -17,7 +17,7 @@ import {
   Moon, Play, Plus, RefreshCw, Rocket, Save, Settings as SettingsIcon, Shield, Sparkles,
   Sun, Trash2, TriangleAlert, X,
 } from 'lucide-react';
-import type { AiRequest, GeneratorMode, Project, ProgramKind, Provider, Settings, TestCase, TestGenerationProgress, TestGroup, TestPlan, TestRunProgress } from '../shared/types';
+import type { AiRequest, GeminiModelCatalog, GeminiModelInfo, GeneratorMode, Project, ProgramKind, Provider, Settings, TestCase, TestGenerationProgress, TestGroup, TestPlan, TestRunProgress } from '../shared/types';
 import { AI_PROMPT_VERSION, AI_PROMPTS } from '../shared/ai-prompts';
 import { parseTestGenerationCompileFailure } from '../shared/compile-errors';
 import { AiQuickResultSchema, AiStatementDraftSchema, AiTestPlanSchema, statementVersion } from '../shared/validation';
@@ -136,6 +136,16 @@ function App() {
   const autoTestPlanKey = useRef('');
   const autoCodeKey = useRef('');
   const pendingAiResolve = useRef<((value: string) => void) | null>(null);
+  const operationWasCancelled = useRef(false);
+  const startBusy = (label: string) => {
+    operationWasCancelled.current = false;
+    void window.studio.resetOperationCancellation();
+    setBusy(label);
+  };
+  const cancelBusy = () => {
+    operationWasCancelled.current = true;
+    void window.studio.cancelCurrentOperation();
+  };
 
   const notify = useCallback((text: string, kind: 'success' | 'error' | 'info' = 'success') => {
     setToast({ text, kind }); window.setTimeout(() => setToast(null), 3800);
@@ -220,7 +230,7 @@ function App() {
     if (busy) return;
     setClearDataModal(false);
     setDirty(false);
-    setBusy('Đang xóa bài thi và dữ liệu trợ lý AI…');
+    startBusy('Đang xóa bài thi và dữ liệu trợ lý AI…');
     try {
       const savedProjects = await window.studio.listProjects();
       await Promise.all(savedProjects.map((project) => window.studio.deleteProject(project.id)));
@@ -228,7 +238,7 @@ function App() {
       const nextSettings = settings ? {
         ...settings,
         onboardingComplete: false,
-        provider: 'openai' as const,
+        provider: 'gemini' as const,
         models: { openai: 'gpt-4.1-mini', gemini: 'gemini-2.5-flash' },
       } : null;
       if (nextSettings) await window.studio.saveSettings(nextSettings);
@@ -257,7 +267,7 @@ function App() {
 
   const saveKey = async (provider: Provider) => {
     if (!aiKey.trim()) { notify('Hãy nhập API key trước.', 'error'); return; }
-    setBusy('key');
+    startBusy('key');
     try {
       await window.studio.saveApiKey(provider, aiKey); setHasKeys({ ...hasKeys, [provider]: true }); setAiKey('');
       notify(`Đã lưu API key ${provider === 'openai' ? 'OpenAI' : 'Gemini'} an toàn.`);
@@ -275,15 +285,16 @@ function App() {
   };
 
   const performAiRequest = async (request: AiRequest, label: string) => {
-    setBusy(label);
+    startBusy(label);
     try {
       const response = await window.studio.askAi(request);
-      return response.text;
-    } catch (error) { notify((error as Error).message, 'error'); return ''; }
+      return operationWasCancelled.current ? '' : response.text;
+    } catch (error) { if (!operationWasCancelled.current) notify((error as Error).message, 'error'); return ''; }
     finally { setBusy(''); }
   };
 
   const runAi = async (request: AiRequest, label = 'Đang hỏi AI…') => {
+    if (operationWasCancelled.current) return '';
     if (!settings) return '';
     const provider = request.provider ?? settings.provider;
     const requestWithContext = { ...request, projectId: request.projectId ?? active?.id, promptVersion: request.promptVersion ?? AI_PROMPT_VERSION };
@@ -303,7 +314,7 @@ function App() {
   const saveAiKeyAndContinue = async () => {
     if (!aiKeyModal || !aiKey.trim()) { notify('Hãy nhập API key trước.', 'error'); return; }
     const provider = aiKeyModal;
-    setBusy('key');
+    startBusy('key');
     try {
       await window.studio.saveApiKey(provider, aiKey);
       setHasKeys((current) => ({ ...current, [provider]: true }));
@@ -324,7 +335,7 @@ function App() {
 
   const compileSource = async (kind: ProgramKind, source: string) => {
     if (!active) { notify('Hãy mở hoặc tạo bài thi trước.', 'info'); return false; }
-    setBusy(`compile-${kind}`);
+    startBusy(`compile-${kind}`);
     try {
       const label = kind === 'generator' ? 'Generator' : kind === 'solution' ? 'Lời giải' : 'Validator';
       const result = await retryOnce(() => window.studio.compile(active.id, kind, source), (attempt) => !attempt.ok, () => notify(`Biên dịch ${label} lỗi, sẽ thử lại sau 1 giây…`, 'info'));
@@ -338,7 +349,7 @@ function App() {
       }
       setCompilerAvailable(result.ok || compilerAvailable); setCompilerName(result.compiler);
       return result.ok;
-    } catch (error) { notify((error as Error).message, 'error'); return false; }
+    } catch (error) { if (!operationWasCancelled.current) notify((error as Error).message, 'error'); return false; }
     finally { setBusy(''); }
   };
 
@@ -346,17 +357,17 @@ function App() {
     if (!active) return;
     const ok = await compileSource('solution', active.solution);
     if (!ok) return;
-    setBusy('run');
+    startBusy('run');
     try {
       const result = await retryOnce(() => window.studio.run(active.id, 'solution', runInput, [], active.timeLimitMs), (attempt) => attempt.timedOut || attempt.exitCode !== 0 || attempt.outputLimited, () => notify('Chạy thử lời giải gặp lỗi, sẽ thử lại sau 1 giây…', 'info'));
       setRunOutput(`${result.timedOut ? 'Quá thời gian.\n' : ''}${result.stdout}${result.stderr ? `\n[stderr]\n${result.stderr}` : ''}${result.exitCode !== 0 && !result.timedOut ? `\nMã thoát: ${result.exitCode}` : ''}`);
-    } catch (error) { notify((error as Error).message, 'error'); }
+    } catch (error) { if (!operationWasCancelled.current) notify((error as Error).message, 'error'); }
     finally { setBusy(''); }
   };
 
   const runAllTests = async () => {
     if (!active || !active.tests.some((test) => !test.inputStale && !['duplicate', 'invalid', 'error'].includes(test.status))) { notify('Chưa có testcase hợp lệ để chạy.', 'info'); return; }
-    setBusy('run-tests');
+    startBusy('run-tests');
     setRunProgress(null);
     try {
       const result = await window.studio.runTests(active.id, active.solution, active.tests, active.timeLimitMs, undefined, active.oracleSolution);
@@ -365,7 +376,7 @@ function App() {
       const ready = eligible.filter((test) => ['generated', 'verified'].includes(test.status) && !test.outputStale).length;
       const verified = eligible.filter((test) => test.status === 'verified').length;
       notify(`Hoàn tất: ${ready}/${eligible.length} có output; ${verified} đã đối chiếu với oracle.`, ready === eligible.length ? 'success' : 'error');
-    } catch (error) { notify((error as Error).message, 'error'); }
+    } catch (error) { if (!operationWasCancelled.current) notify((error as Error).message, 'error'); }
     finally { setBusy(''); }
   };
 
@@ -373,19 +384,19 @@ function App() {
     if (!active) return;
     const ids = active.tests.filter((test) => test.groupId === groupId && !test.inputStale && !['duplicate', 'invalid', 'error'].includes(test.status)).map((test) => test.id);
     if (!ids.length) { notify('Nhóm này không có testcase hợp lệ để chạy.', 'info'); return; }
-    setBusy('run-tests');
+    startBusy('run-tests');
     setRunProgress(null);
     try {
       const result = await window.studio.runTests(active.id, active.solution, active.tests, active.timeLimitMs, ids, active.oracleSolution);
       updateActive({ tests: result });
       notify(`Đã chạy ${ids.length} testcase trong nhóm.`);
-    } catch (error) { notify((error as Error).message, 'error'); }
+    } catch (error) { if (!operationWasCancelled.current) notify((error as Error).message, 'error'); }
     finally { setBusy(''); }
   };
 
   const exportAllFiles = async () => {
     if (!active) { notify('Hãy mở bài thi trước.', 'info'); return; }
-    setBusy('export');
+    startBusy('export');
     try {
       const result = await window.studio.exportAll(active);
       if (result) {
@@ -613,7 +624,7 @@ function App() {
     const source = sourceOverride ?? active.generator;
     const validator = validatorOverride ?? active.validator;
     if (!isReadyGenerator(active, source)) { notify('Generator chưa sẵn sàng. Hãy sửa mã hoặc dùng nút AI trên màn hình.', 'info'); return false; }
-    setBusy('generate');
+    startBusy('generate');
     setGenerationProgress(null);
     try {
       const result = await window.studio.generateTests(active.id, active.testPlan, active.seed, source, validator, statementVersion(active.statement), active.tests.map((test) => test.sha256).filter((hash): hash is string => Boolean(hash)));
@@ -641,7 +652,7 @@ function App() {
             if (generated) setPage('solution');
           },
         });
-      } else notify((error as Error).message, 'error');
+      } else if (!operationWasCancelled.current) notify((error as Error).message, 'error');
       return false;
     }
     finally { setBusy(''); }
@@ -653,7 +664,7 @@ function App() {
     if (!group) { notify('Không tìm thấy nhóm Test Plan để sinh lại testcase.', 'error'); return; }
     const source = sourceOverride ?? active.generator;
     const validator = validatorOverride ?? active.validator;
-    setBusy('generate');
+    startBusy('generate');
     try {
       const regenerated = await window.studio.regenerateTest(active.id, group, active.seed, test.testIndex ?? 1, source, validator, statementVersion(active.statement), active.tests.filter((item) => item.id !== test.id && item.sha256).map((item) => item.sha256!));
       updateActive({ tests: active.tests.map((item) => item.id === test.id ? regenerated : item) });
@@ -675,7 +686,7 @@ function App() {
             );
           },
         });
-      } else notify((error as Error).message, 'error');
+      } else if (!operationWasCancelled.current) notify((error as Error).message, 'error');
     } finally { setBusy(''); }
   };
 
@@ -691,7 +702,7 @@ function App() {
     if (!isReadySolution(active, source)) { notify('Lời giải chưa sẵn sàng. Hãy sửa mã hoặc dùng nút AI trên màn hình.', 'info'); return false; }
     const compiled = await compileSource('solution', source);
     if (!compiled) return false;
-    setBusy('run');
+    startBusy('run');
     try {
       const input = runInput || usableTests(active)[0]?.input || '';
       if (!input) { notify('Hãy sinh ít nhất một testcase hợp lệ trước khi kiểm tra lời giải.', 'info'); return false; }
@@ -721,7 +732,7 @@ function App() {
     if (page === 'runner') return active ? <Runner project={active} busy={busy} progress={runProgress} runAll={runAllTests} clear={() => updateActive({ tests: [] })} regenerate={regenerateTestCase} remove={(test) => updateActive({ tests: active.tests.filter((item) => item.id !== test.id) })} runGroup={runTestGroup} /> : <EmptyProject create={() => setProjectModal(true)} />;
     if (page === 'export') return active ? <Export project={active} themisInputFile={settings?.themisInputFile ?? 'BAI.INP'} busy={busy} directory={exportDirectory} exported={exportedProjectId === active.id} exportAgain={exportAllFiles} openSavedDirectory={openSavedExportDirectory} /> : <EmptyProject create={() => setProjectModal(true)} />;
     if (page === 'help') return <HelpPage />;
-    return <SettingsPage settings={settings} hasKeys={hasKeys} aiKey={aiKey} setAiKey={setAiKey} saveKey={saveKey} update={updateSettings} busy={busy} compilerAvailable={compilerAvailable} compilerName={compilerName} test={async () => { setBusy('Đang kiểm tra kết nối AI…'); try { const result = await window.studio.testAiConnection({ provider: settings?.provider, prompt: AI_PROMPTS.connectionTest }); notify(`Kết nối thành công: ${result}`, 'success'); } catch (error) { notify((error as Error).message, 'error'); } finally { setBusy(''); } }} removeKey={async (provider) => { await window.studio.removeApiKey(provider); setHasKeys({ ...hasKeys, [provider]: false }); notify('Đã xóa API key.'); }} chooseCompiler={async () => { const file = await window.studio.chooseCompiler(); if (file && settings) { const next = { ...settings, compilerPath: file }; await updateSettings(next); const status = await window.studio.getStatus(); setCompilerAvailable(status.compilerAvailable); setCompilerName(status.compiler); } }} chooseDocumentTools={async () => { const folder = await window.studio.chooseDocumentTools(); if (folder && settings) await updateSettings({ ...settings, documentToolsPath: folder }); }} onClearData={() => setClearDataModal(true)} />;
+    return <SettingsPage settings={settings} hasKeys={hasKeys} aiKey={aiKey} setAiKey={setAiKey} saveKey={saveKey} update={updateSettings} busy={busy} compilerAvailable={compilerAvailable} compilerName={compilerName} test={async () => { startBusy('Đang kiểm tra kết nối AI…'); try { const result = await window.studio.testAiConnection({ provider: settings?.provider, prompt: AI_PROMPTS.connectionTest }); if (!operationWasCancelled.current) notify(`Kết nối thành công: ${result}`, 'success'); } catch (error) { if (!operationWasCancelled.current) notify((error as Error).message, 'error'); } finally { setBusy(''); } }} removeKey={async (provider) => { await window.studio.removeApiKey(provider); setHasKeys({ ...hasKeys, [provider]: false }); notify('Đã xóa API key.'); }} chooseCompiler={async () => { const file = await window.studio.chooseCompiler(); if (file && settings) { const next = { ...settings, compilerPath: file }; await updateSettings(next); const status = await window.studio.getStatus(); setCompilerAvailable(status.compilerAvailable); setCompilerName(status.compiler); } }} chooseDocumentTools={async () => { const folder = await window.studio.chooseDocumentTools(); if (folder && settings) await updateSettings({ ...settings, documentToolsPath: folder }); }} onClearData={() => setClearDataModal(true)} />;
   };
 
   const currentPage = pageInfo[page];
@@ -847,14 +858,14 @@ function App() {
     {clearDataModal && <Modal title="Xóa bài thi và dữ liệu AI?" subtitle="Thao tác này không thể hoàn tác. Chỉ xóa sau khi bạn xác nhận." close={() => setClearDataModal(false)}><div className="security-note"><TriangleAlert size={16} /><span>Sẽ xóa toàn bộ bài thi, testcase, ảnh đính kèm, bộ nhớ AI trong bài thi, API key và lựa chọn model AI. Compiler, giao diện và các cài đặt khác được giữ nguyên.</span></div><div className="modal-actions"><button className="button button-secondary" onClick={() => setClearDataModal(false)}>Hủy</button><button className="button button-danger" onClick={() => void clearProjectsAndAiData()} disabled={Boolean(busy)}><Trash2 size={15} /> Xóa dữ liệu</button></div></Modal>}
     {compileFixRequest && <Modal title="Phát hiện lỗi biên dịch" subtitle={`${compileFixRequest.kind === 'generator' ? 'Generator' : compileFixRequest.kind === 'validator' ? 'Validator' : compileFixRequest.kind === 'solution' ? 'Lời giải' : 'Oracle'} không biên dịch được.`} close={() => setCompileFixRequest(null)}><div className="security-note"><Sparkles size={16} /><span>Bạn có muốn gửi mã nguồn và diagnostics đến AI đã cấu hình để sửa không? Bản sửa sẽ được đưa vào trình soạn thảo rồi biên dịch lại. Nếu lỗi xảy ra khi sinh testcase, ứng dụng sẽ thử sinh lại sau khi mã biên dịch thành công.</span></div><div className="modal-actions"><button className="button button-secondary" onClick={() => setCompileFixRequest(null)}>Để tôi tự sửa</button><button className="button button-primary" onClick={() => void acceptCompileFix()}><Sparkles size={15} /> Sửa bằng AI</button></div></Modal>}
     {aiKeyModal && <Modal title="Cấu hình API key để tiếp tục" subtitle={`Tính năng này cần ${aiKeyModal === "openai" ? "OpenAI" : "Gemini"}. Key được mã hóa và lưu cục bộ.`} close={cancelAiKeySetup}><label className="field-label">API key {aiKeyModal === "openai" ? "OpenAI" : "Gemini"}</label><input autoFocus className="text-input" type="password" value={aiKey} onChange={(event) => setAiKey(event.target.value)} placeholder="Dán API key tại đây" /><div className="security-note"><Shield size={15} /><span>Key chỉ được gửi khi bạn mở bước cần AI hoặc chủ động yêu cầu AI.</span></div><div className="modal-actions"><button className="button button-plain" onClick={cancelAiKeySetup}>Hủy</button><button className="button button-primary" onClick={() => void saveAiKeyAndContinue()} disabled={busy === "key"}><Save size={15} /> Lưu và tiếp tục</button></div></Modal>}
-    {onboarding && settings && <Modal title="Chào mừng đến CP Test Studio" subtitle="Soạn đề và chạy bộ test ngay trên máy. API AI là tùy chọn, bạn có thể cấu hình sau." close={() => void finishOnboarding(true)} wide><div className="welcome-banner"><div className="welcome-icon"><Rocket size={23} /></div><div><b>Bắt đầu làm việc theo cách của bạn</b><p>Không cần tài khoản. Bài thi được lưu trên máy, các thao tác biên dịch và tạo testcase chạy ngoại tuyến.</p></div></div><div className="onboard-api"><div><label className="field-label">Nhà cung cấp AI (không bắt buộc)</label><select className="text-input" value={settings.provider} onChange={(event) => void updateSettings({ ...settings, provider: event.target.value as Provider })}><option value="openai">OpenAI</option><option value="gemini">Google Gemini</option></select></div><div><label className="field-label">API key</label><div className="input-with-button"><input className="text-input" type="password" value={aiKey} onChange={(event) => setAiKey(event.target.value)} placeholder="Có thể bỏ qua và thêm sau" /><KeyRound size={16} /></div></div></div><div className="security-note"><Shield size={16} /><span>API key được mã hóa bởi Windows; AI tự chạy khi bạn mở bước 2–4 còn thiếu nội dung.</span></div><div className="modal-actions"><button className="button button-plain" onClick={() => void finishOnboarding(true)}>Bỏ qua, dùng không cần AI</button><button className="button button-primary" onClick={() => void finishOnboarding(false)} disabled={Boolean(aiKey && busy === 'key')}>Bắt đầu sử dụng <ArrowRight size={16} /></button></div></Modal>}
+    {onboarding && settings && <Modal title="Chào mừng đến CP Test Studio" subtitle="Soạn đề và chạy bộ test ngay trên máy. API AI là tùy chọn, bạn có thể cấu hình sau." close={() => void finishOnboarding(true)} wide><div className="welcome-banner"><div className="welcome-icon"><Rocket size={23} /></div><div><b>Bắt đầu làm việc theo cách của bạn</b><p>Không cần tài khoản. Bài thi được lưu trên máy, các thao tác biên dịch và tạo testcase chạy ngoại tuyến.</p></div></div><div className="onboard-api"><div><label className="field-label">Nhà cung cấp AI</label><div className="text-input provider-static">Google Gemini</div></div><div><label className="field-label">API key Google Gemini (không bắt buộc)</label><div className="input-with-button"><input className="text-input" type="password" value={aiKey} onChange={(event) => setAiKey(event.target.value)} placeholder="Có thể bỏ qua và thêm sau" /><KeyRound size={16} /></div></div></div><AiUsageNote compact /><div className="security-note"><Shield size={16} /><span>API key được mã hóa bởi Windows; AI tự chạy khi bạn mở bước 2–4 còn thiếu nội dung.</span></div><div className="modal-actions"><button className="button button-plain" onClick={() => void finishOnboarding(true)}>Bỏ qua, dùng không cần AI</button><button className="button button-primary" onClick={() => void finishOnboarding(false)} disabled={Boolean(aiKey && busy === 'key')}>Bắt đầu sử dụng <ArrowRight size={16} /></button></div></Modal>}
     {toast && <div className={`toast toast-${toast.kind}`}><span className="toast-mark">{toast.kind === 'success' ? <Check size={16} /> : toast.kind === 'error' ? <TriangleAlert size={16} /> : <CircleHelp size={16} />}</span>{toast.text}<button onClick={() => setToast(null)}><X size={15} /></button></div>}
     </div>
-    {busy && <LoadingOverlay busy={busy} generationProgress={generationProgress} runProgress={runProgress} />}
+    {busy && <LoadingOverlay busy={busy} generationProgress={generationProgress} runProgress={runProgress} onCancel={cancelBusy} />}
   </>;
 }
 
-function LoadingOverlay({ busy, generationProgress, runProgress }: { busy: string; generationProgress: TestGenerationProgress | null; runProgress: TestRunProgress | null }) {
+function LoadingOverlay({ busy, generationProgress, runProgress, onCancel }: { busy: string; generationProgress: TestGenerationProgress | null; runProgress: TestRunProgress | null; onCancel: () => void }) {
   const label = busy.startsWith('Đang') ? busy
     : busy === 'run-tests' ? 'Đang chạy testcase…'
       : busy === 'generate' ? 'Đang sinh testcase…'
@@ -865,18 +876,20 @@ function LoadingOverlay({ busy, generationProgress, runProgress }: { busy: strin
   const generation = busy === 'generate' ? generationProgress : null;
   const running = busy === 'run-tests' ? runProgress : null;
   const progress = generation ?? running;
+  const canCancel = busy !== 'key' && busy !== 'export' && !busy.startsWith('Đang xóa');
   const details = generation
     ? `${generation.generated} input hợp lệ · ${generation.duplicates} trùng · ${generation.invalid} không hợp lệ · ${generation.errors} lỗi`
     : running
       ? `${running.completed}/${running.total} testcase hoàn tất · ${running.errors} lỗi`
       : 'Vui lòng đợi trong khi ứng dụng hoàn tất thao tác.';
   return <div className="busy-overlay" role="presentation">
-    <section className="busy-dialog" role="status" aria-live="polite" aria-label={label}>
+    <section className="busy-dialog" role="dialog" aria-modal="true" aria-live="polite" aria-label={label}>
       <div className="busy-spinner"><LoaderCircle size={27} className="spin" /></div>
       <h2>{label}</h2>
       <p>{details}</p>
       {progress && <progress max={progress.total || 1} value={progress.current} />}
       <small>Ứng dụng đang tạm khóa thao tác.</small>
+      {canCancel && <button type="button" className="button button-secondary busy-cancel" onClick={onCancel}><X size={15} /> Hủy thao tác</button>}
     </section>
   </div>;
 }
@@ -1089,8 +1102,18 @@ function Export({ project, themisInputFile, busy, directory, exported, exportAga
 }
 
 function SettingsPage({ settings, hasKeys, aiKey, setAiKey, saveKey, update, busy, compilerAvailable, compilerName, test, removeKey, chooseCompiler, chooseDocumentTools, onClearData }: { settings: Settings | null; hasKeys: Record<Provider, boolean>; aiKey: string; setAiKey: (key: string) => void; saveKey: (provider: Provider) => void; update: (settings: Settings) => void; busy: string; compilerAvailable: boolean; compilerName: string; test: () => Promise<void>; removeKey: (provider: Provider) => void; chooseCompiler: () => void; chooseDocumentTools: () => void; onClearData: () => void }) {
-  const [provider, setProvider] = useState<Provider>('openai');
+  const provider: Provider = 'gemini';
   const [testingConnection, setTestingConnection] = useState(false);
+  const [modelCatalog, setModelCatalog] = useState<GeminiModelCatalog | null>(null);
+  const [loadingModelCatalog, setLoadingModelCatalog] = useState(true);
+  const [showAllModels, setShowAllModels] = useState(false);
+  useEffect(() => {
+    let active = true;
+    void window.studio.getGeminiModelCatalog().then((catalog) => { if (active) setModelCatalog(catalog); }).catch((error) => {
+      if (active) setModelCatalog({ models: [], fetchedAt: '', stale: true, warning: `Không tải được dữ liệu model từ Google: ${(error as Error).message}` });
+    }).finally(() => { if (active) setLoadingModelCatalog(false); });
+    return () => { active = false; };
+  }, []);
   const runConnectionTest = async () => {
     if (testingConnection) return;
     setTestingConnection(true);
@@ -1098,7 +1121,64 @@ function SettingsPage({ settings, hasKeys, aiKey, setAiKey, saveKey, update, bus
     finally { setTestingConnection(false); }
   };
   if (!settings) return <div className="panel loading-settings"><LoaderCircle className="spin" /> Đang tải cài đặt…</div>;
-  return <div className="settings-layout"><div className="settings-column"><section className="panel settings-card"><div className="settings-title"><div className="settings-icon purple"><Sparkles size={18} /></div><div><h3>Trợ lý AI</h3><p>Ở các bước 2–4, AI tự chạy khi nội dung còn thiếu; tác vụ khác chỉ chạy khi bạn chọn.</p></div><span className="optional-tag">TÙY CHỌN</span></div><div className="provider-tabs"><button className={provider === 'openai' ? 'selected' : ''} onClick={() => setProvider('openai')}>OpenAI</button><button className={provider === 'gemini' ? 'selected' : ''} onClick={() => setProvider('gemini')}>Google Gemini</button></div><div className="settings-form-grid"><label><span>Model mặc định</span><input className="text-input" value={settings.models[provider]} onChange={(e) => update({ ...settings, models: { ...settings.models, [provider]: e.target.value } })} placeholder={provider === 'openai' ? 'gpt-4.1-mini' : 'gemini-2.5-flash'} /></label><label><span>Provider mặc định</span><select className="text-input" value={settings.provider} onChange={(e) => update({ ...settings, provider: e.target.value as Provider })}><option value="openai">OpenAI</option><option value="gemini">Google Gemini</option></select></label></div><label className="field-label api-label">API key {hasKeys[provider] && <span className="key-saved"><BadgeCheck size={13} /> Đã lưu an toàn</span>}</label><div className="api-key-row"><div className="input-with-button"><input className="text-input" type="password" value={aiKey} onChange={(e) => setAiKey(e.target.value)} placeholder={hasKeys[provider] ? 'Nhập key mới để thay thế' : 'Dán API key tại đây'} /><KeyRound size={16} /></div><button className="button button-primary" onClick={() => saveKey(provider)} disabled={busy === 'key'}><Save size={15} /> Lưu key</button></div><div className="security-note"><Shield size={15} /><span>Key được mã hóa bằng cơ chế bảo vệ thông tin của Windows; không lưu trong file bài thi.</span></div><div className="settings-actions"><button className="button button-secondary button-small" onClick={() => void runConnectionTest()} disabled={!hasKeys[provider] || testingConnection || Boolean(busy)}>{testingConnection ? <><LoaderCircle size={14} className="spin" /> Đang kiểm tra...</> : <><Activity size={14} /> Kiểm tra kết nối</>}</button>{hasKeys[provider] && <button className="button button-danger button-small" onClick={() => removeKey(provider)}><Trash2 size={14} /> Xóa key</button>}</div></section><section className="panel settings-card"><div className="settings-title"><div className="settings-icon blue"><Code2 size={18} /></div><div><h3>Compiler C++</h3><p>Ứng dụng không kèm GCC. Hãy giải nén bộ GCC bên ngoài rồi import bằng cách chọn g++.exe.</p></div></div><div className="environment-row"><span className="env-indicator"><span className={`dot ${compilerAvailable ? 'green' : 'warn'}`}/></span><div><b>{compilerAvailable ? 'Đã tìm thấy compiler' : 'Chưa tìm thấy g++'}</b><small>{compilerName || settings.compilerPath || 'Chưa chọn compiler bên ngoài'}</small></div><button className="button button-secondary button-small" onClick={chooseCompiler}>Chọn g++.exe</button></div><div className="setup-hint"><b>Cài GCC một lần</b><span>Giải nén toàn bộ bộ GCC, giữ nguyên các thư mục con rồi chọn thư mục bin\g++.exe. Không di chuyển riêng file g++.exe.</span></div></section><section className="panel settings-card"><div className="settings-title"><div className="settings-icon orange"><FileText size={18} /></div><div><h3>Xuất tài liệu</h3><p>Gói này tách khỏi MSI. Chọn thư mục đã giải nén có pandoc.exe, typst.exe, reference.docx, pandoc-normalize.lua và fonts\Roboto.ttf.</p></div></div><div className="environment-row"><span className="env-indicator"><span className={`dot ${settings.documentToolsPath ? 'green' : 'warn'}`}/></span><div><b>{settings.documentToolsPath ? 'Đã chọn công cụ xuất tài liệu' : 'Chưa chọn công cụ xuất tài liệu'}</b><small>{settings.documentToolsPath || 'Chọn thư mục document-export sau khi giải nén'}</small></div><button className="button button-secondary button-small" onClick={chooseDocumentTools}>Chọn thư mục</button></div></section><section className="panel settings-card"><div className="settings-title"><div className="settings-icon gray"><Trash2 size={18} /></div><div><h3>Xóa bài thi và dữ liệu AI</h3><p>Xóa toàn bộ bài thi và dữ liệu trợ lý AI đã lưu trong ứng dụng.</p></div></div><div className="settings-actions"><button className="button button-danger button-small" onClick={onClearData} disabled={Boolean(busy)}><Trash2 size={14} /> Xóa dữ liệu</button></div></section></div></div>;
+  const updateGeminiModel = (model: string) => update({ ...settings, models: { ...settings.models, gemini: model } });
+  const activeModels = modelCatalog?.models.filter((model) => !model.shutdown) ?? [];
+  const primaryModelSuggestions = getGeminiModelSuggestions(activeModels);
+  const primaryModelIds = new Set(primaryModelSuggestions.map(({ model }) => model.id));
+  const otherActiveModels = activeModels.filter((model) => !primaryModelIds.has(model.id));
+  return <div className="settings-layout"><div className="settings-column"><section className="panel settings-card"><div className="settings-title"><div className="settings-icon purple"><Sparkles size={18} /></div><div><h3>Trợ lý AI</h3><p>Ở các bước 2–4, AI tự chạy khi nội dung còn thiếu; tác vụ khác chỉ chạy khi bạn chọn.</p></div><span className="optional-tag">TÙY CHỌN</span></div><div className="settings-form-grid"><label><span>Nhà cung cấp AI</span><div className="text-input provider-static">Google Gemini</div></label><label><span>Model mặc định</span><input className="text-input" value={settings.models.gemini} onChange={(e) => updateGeminiModel(e.target.value)} placeholder="gemini-2.5-flash" /></label></div><div className="model-catalog-control"><div className="model-suggestion-title">Ba gợi ý nhanh từ các model còn hoạt động · bấm để điền</div><div className="model-suggestion-labels">{primaryModelSuggestions.map(({ model, label }) => <button type="button" aria-pressed={settings.models.gemini.trim().toLowerCase() === model.id.toLowerCase()} className={`model-suggestion-badge ${model.preview ? 'preview' : ''} ${settings.models.gemini.trim().toLowerCase() === model.id.toLowerCase() ? 'selected' : ''}`} key={model.id} onClick={() => updateGeminiModel(model.id)}><code>{model.id}</code><small>{label}</small></button>)}{otherActiveModels.length > 0 && <button type="button" className="model-suggestion-more" onClick={() => setShowAllModels((show) => !show)}>{showAllModels ? 'Thu gọn' : `+${otherActiveModels.length} model xem thêm`}</button>}{!loadingModelCatalog && activeModels.length === 0 && <span className="model-catalog-status">Chưa tải được danh sách model.</span>}</div>{showAllModels && otherActiveModels.length > 0 && <div className="model-suggestion-labels model-suggestion-extra">{otherActiveModels.map((model) => <button type="button" aria-pressed={settings.models.gemini.trim().toLowerCase() === model.id.toLowerCase()} className={`model-suggestion-badge ${model.preview ? 'preview' : ''} ${settings.models.gemini.trim().toLowerCase() === model.id.toLowerCase() ? 'selected' : ''}`} key={model.id} onClick={() => updateGeminiModel(model.id)}><code>{model.id}</code><small>{model.recommended ? 'Khuyến nghị' : model.preview ? 'Bản xem trước' : 'Đang hoạt động'}</small></button>)}</div>}<div className="model-catalog-status">{loadingModelCatalog ? <><LoaderCircle size={13} className="spin" /> Đang tải trạng thái model từ Google…</> : modelCatalog?.warning ? <><TriangleAlert size={13} /> {modelCatalog.warning}</> : modelCatalog ? <>Cập nhật từ Google lúc {new Date(modelCatalog.fetchedAt).toLocaleString('vi-VN')}{modelCatalog.stale ? ' (dữ liệu lưu lần trước)' : ''}.</> : 'Không có dữ liệu model.'}</div><div className="model-catalog-disclaimer">Bấm vào model để điền vào ô Model mặc định. Với API key miễn phí, model mới hoặc đang được nhiều người dùng có thể quá tải, phản hồi chậm, chạm quota sớm hoặc tạm thời từ chối yêu cầu. <a href="https://ai.google.dev/gemini-api/docs/deprecations" target="_blank" rel="noreferrer">Mở tài liệu Google</a></div><CurrentGeminiModelStatus model={settings.models.gemini} catalog={modelCatalog} loading={loadingModelCatalog} /></div><AiUsageNote /><label className="field-label api-label">API key Google Gemini {hasKeys[provider] && <span className="key-saved"><BadgeCheck size={13} /> Đã lưu an toàn</span>}</label><div className="api-key-row"><div className="input-with-button"><input className="text-input" type="password" value={aiKey} onChange={(e) => setAiKey(e.target.value)} placeholder={hasKeys[provider] ? 'Nhập key mới để thay thế' : 'Dán API key tại đây'} /><KeyRound size={16} /></div><button className="button button-primary" onClick={() => saveKey(provider)} disabled={busy === 'key'}><Save size={15} /> Lưu key</button></div><div className="security-note"><Shield size={15} /><span>Key được mã hóa bằng cơ chế bảo vệ thông tin của Windows; không lưu trong file bài thi.</span></div><div className="settings-actions"><button className="button button-secondary button-small" onClick={() => void runConnectionTest()} disabled={!hasKeys[provider] || testingConnection || Boolean(busy)}>{testingConnection ? <><LoaderCircle size={14} className="spin" /> Đang kiểm tra...</> : <><Activity size={14} /> Kiểm tra kết nối</>}</button>{hasKeys[provider] && <button className="button button-danger button-small" onClick={() => removeKey(provider)}><Trash2 size={14} /> Xóa key</button>}</div></section><section className="panel settings-card"><div className="settings-title"><div className="settings-icon blue"><Code2 size={18} /></div><div><h3>Compiler C++</h3><p>Ứng dụng không kèm GCC. Hãy giải nén bộ GCC bên ngoài rồi import bằng cách chọn g++.exe.</p></div></div><div className="environment-row"><span className="env-indicator"><span className={`dot ${compilerAvailable ? 'green' : 'warn'}`}/></span><div><b>{compilerAvailable ? 'Đã tìm thấy compiler' : 'Chưa tìm thấy g++'}</b><small>{compilerName || settings.compilerPath || 'Chưa chọn compiler bên ngoài'}</small></div><button className="button button-secondary button-small" onClick={chooseCompiler}>Chọn g++.exe</button></div><div className="setup-hint"><b>Cài GCC một lần</b><span>Giải nén toàn bộ bộ GCC, giữ nguyên các thư mục con rồi chọn thư mục bin\g++.exe. Không di chuyển riêng file g++.exe.</span></div></section><section className="panel settings-card"><div className="settings-title"><div className="settings-icon orange"><FileText size={18} /></div><div><h3>Xuất tài liệu</h3><p>Gói này tách khỏi MSI. Chọn thư mục đã giải nén có pandoc.exe, typst.exe, reference.docx, pandoc-normalize.lua và fonts\Roboto.ttf.</p></div></div><div className="environment-row"><span className="env-indicator"><span className={`dot ${settings.documentToolsPath ? 'green' : 'warn'}`}/></span><div><b>{settings.documentToolsPath ? 'Đã chọn công cụ xuất tài liệu' : 'Chưa chọn công cụ xuất tài liệu'}</b><small>{settings.documentToolsPath || 'Chọn thư mục document-export sau khi giải nén'}</small></div><button className="button button-secondary button-small" onClick={chooseDocumentTools}>Chọn thư mục</button></div></section><section className="panel settings-card"><div className="settings-title"><div className="settings-icon gray"><Trash2 size={18} /></div><div><h3>Xóa bài thi và dữ liệu AI</h3><p>Xóa toàn bộ bài thi và dữ liệu trợ lý AI đã lưu trong ứng dụng.</p></div></div><div className="settings-actions"><button className="button button-danger button-small" onClick={onClearData} disabled={Boolean(busy)}><Trash2 size={14} /> Xóa dữ liệu</button></div></section></div></div>;
+}
+
+function getGeminiModelSuggestions(models: GeminiModelInfo[]): Array<{ model: GeminiModelInfo; label: string }> {
+  const compare = (a: GeminiModelInfo, b: GeminiModelInfo) => {
+    const version = (id: string) => {
+      const match = id.match(/^gemini-(\d+)(?:\.(\d+))?/i);
+      return match ? Number(match[1]) * 100 + Number(match[2] ?? 0) : 0;
+    };
+    return version(b.id) - version(a.id) || Number(a.preview) - Number(b.preview) || Number(b.recommended) - Number(a.recommended) || a.id.localeCompare(b.id);
+  };
+  const sorted = [...models].sort(compare);
+  const selected = new Set<string>();
+  const choose = (preferred: (model: GeminiModelInfo) => boolean, label: string) => {
+    const model = sorted.find((candidate) => !selected.has(candidate.id) && preferred(candidate))
+      ?? sorted.find((candidate) => !selected.has(candidate.id));
+    if (!model) return null;
+    selected.add(model.id);
+    return { model, label };
+  };
+  return [
+    choose((model) => /-pro(?:-|$)/i.test(model.id), 'Mạnh nhất'),
+    choose((model) => /-flash-lite(?:-|$)/i.test(model.id), 'Nhẹ nhất'),
+    choose((model) => /-flash(?:-|$)/i.test(model.id) && !/-flash-lite(?:-|$)/i.test(model.id), 'Cân bằng'),
+  ].filter((suggestion): suggestion is { model: GeminiModelInfo; label: string } => suggestion !== null);
+}
+
+function CurrentGeminiModelStatus({ model, catalog, loading }: { model: string; catalog: GeminiModelCatalog | null; loading: boolean }) {
+  if (loading) return null;
+  const info = catalog?.models.find((item) => item.id.toLowerCase() === model.trim().toLowerCase());
+  if (!info) return <div className="current-model-status muted">Model hiện tại không có trong danh sách Google vừa tải; vẫn có thể dùng model tùy chỉnh.</div>;
+  if (info.recommended) return <div className="current-model-status recommended"><BadgeCheck size={13} /> Model hiện tại được Google khuyến nghị cho dự án mới.</div>;
+  if (info.shutdown) return <div className="current-model-status warning"><TriangleAlert size={13} /> Model đã ngừng hỗ trợ{info.replacement ? `; hãy chuyển sang ${info.replacement}` : ''}.</div>;
+  if (info.shutdownDate === 'N/A' && info.replacement) return <div className="current-model-status muted">Google cho biết endpoint tự định tuyến tới {info.replacement}.</div>;
+  if (info.shutdownDate && info.shutdownDate !== 'No shutdown date announced') return <div className="current-model-status warning"><TriangleAlert size={13} /> Mốc ngừng sớm nhất được Google công bố: {info.shutdownDate}{info.replacement ? `; thay bằng ${info.replacement}` : ''}.</div>;
+  return <div className="current-model-status muted">Chưa có ngày ngừng hỗ trợ được công bố cho model này.</div>;
+}
+
+function AiUsageNote({ compact = false }: { compact?: boolean }) {
+  return <aside className={`ai-usage-note ${compact ? 'compact' : ''}`} id={compact ? undefined : 'ai-usage-note'}>
+    <div className="ai-usage-note-title"><TriangleAlert size={16} /><strong>Lưu ý khi sử dụng tính năng AI</strong></div>
+    {compact ? <p>Gemini có thể trả lời sai hoặc tạm từ chối yêu cầu do giới hạn model/API. Nếu dùng API key miễn phí, model mới hoặc đang có nhiều người dùng có thể quá tải, phản hồi chậm hoặc không ổn định. Hãy kiểm tra nội dung AI tạo trước khi dùng.</p> : <>
+      <p>Tính năng AI sử dụng dịch vụ Google Gemini để hỗ trợ tạo lời giải, hướng dẫn giải và bộ kiểm thử.</p>
+      <ul>
+        <li><b>Độ chính xác:</b> Nội dung do AI tạo có thể chứa lỗi và cần được kiểm tra trước khi sử dụng chính thức.</li>
+        <li><b>Giới hạn và độ ổn định:</b> Số lượng yêu cầu và tốc độ xử lý phụ thuộc vào giới hạn API key và model. Với API key miễn phí, model mới hoặc đang có nhiều người dùng có thể quá tải, phản hồi chậm, chạm quota sớm hoặc tạm thời từ chối yêu cầu.</li>
+        <li><b>Tính khả dụng:</b> Google có thể thay đổi, giới hạn hoặc ngừng hỗ trợ một số model mà không phụ thuộc vào ứng dụng.</li>
+        <li><b>Chi phí:</b> Một số model hoặc mức sử dụng có thể phát sinh phí theo chính sách của Google.</li>
+      </ul>
+      <p>Khi gặp sự cố, hãy thử lại, kiểm tra API key, chọn model khác hoặc tiếp tục chỉnh sửa nội dung thủ công.</p>
+    </>}
+    <div className="ai-usage-links">Tham khảo: <a href="https://ai.google.dev/gemini-api/docs/rate-limits" target="_blank" rel="noreferrer">Giới hạn Gemini API</a><span>·</span><a href="https://ai.google.dev/gemini-api/docs/deprecations" target="_blank" rel="noreferrer">Danh sách model ngừng hỗ trợ</a></div>
+  </aside>;
 }
 
 function Modal({ title, subtitle, close, children, wide = false }: { title: string; subtitle: string; close: () => void; children: React.ReactNode; wide?: boolean }) { return <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && close()}><div className={`modal ${wide ? 'modal-wide' : ''}`}><button className="icon-button modal-close" onClick={close}><X size={17} /></button><div className="modal-heading"><div className="brand-mark small-mark"><Command size={16} /></div><div><h2>{title}</h2><p>{subtitle}</p></div></div>{children}</div></div>; }

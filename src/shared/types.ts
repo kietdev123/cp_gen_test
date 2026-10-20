@@ -142,6 +142,22 @@ export interface Settings {
   themisOutputFile: string;
 }
 
+export interface GeminiModelInfo {
+  id: string;
+  shutdownDate: string;
+  replacement: string;
+  recommended: boolean;
+  shutdown: boolean;
+  preview: boolean;
+}
+
+export interface GeminiModelCatalog {
+  models: GeminiModelInfo[];
+  fetchedAt: string;
+  stale: boolean;
+  warning?: string;
+}
+
 export interface AiRequest {
   provider?: Provider;
   model?: string;
@@ -178,6 +194,9 @@ export interface AppApi {
   saveProjectImage(projectId: string, name: string, mimeType: string, data: string): Promise<ProjectImage>;
   readProjectImage(projectId: string, imageId: string): Promise<{ data: string; mimeType: string } | null>;
   getSettings(): Promise<Settings>;
+  getGeminiModelCatalog(): Promise<GeminiModelCatalog>;
+  resetOperationCancellation(): Promise<void>;
+  cancelCurrentOperation(): Promise<void>;
   saveSettings(settings: Settings): Promise<void>;
   saveApiKey(provider: Provider, key: string): Promise<void>;
   removeApiKey(provider: Provider): Promise<void>;

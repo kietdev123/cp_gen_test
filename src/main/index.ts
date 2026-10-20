@@ -7,17 +7,23 @@ import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:chil
 import archiver from 'archiver';
 import OpenAI from 'openai';
 import { GoogleGenAI } from '@google/genai';
-import type { AiCachedResult, AiRequest, AiResponse, CompileResult, GeneratorMode, Project, ProgramKind, Provider, RunResult, Settings, TestCase, TestGenerationLog, TestGenerationProgress, TestGroup, TestPlan, TestRunProgress } from '../shared/types';
+import type { AiCachedResult, AiRequest, AiResponse, CompileResult, GeminiModelCatalog, GeminiModelInfo, GeneratorMode, Project, ProgramKind, Provider, RunResult, Settings, TestCase, TestGenerationLog, TestGenerationProgress, TestGroup, TestPlan, TestRunProgress } from '../shared/types';
 import { AI_PROMPT_VERSION, AI_PROMPTS } from '../shared/ai-prompts';
 import { createDefaultTestPlan, normalizeProjectJson, TestGroupSchema, TestPlanSchema, statementVersion } from '../shared/validation';
 import { DEFAULT_GENERATOR_TEMPLATE } from '../shared/generator-template';
 
 const DEFAULT_SETTINGS: Settings = {
   onboardingComplete: false,
-  provider: 'openai',
+  provider: 'gemini',
   models: { openai: 'gpt-4.1-mini', gemini: 'gemini-2.5-flash' },
   compilerPath: '', documentToolsPath: '', theme: 'light', themisInputFile: 'BAI.INP', themisOutputFile: 'BAI.OUT',
 };
+const GEMINI_DEPRECATIONS_URL = 'https://ai.google.dev/gemini-api/docs/deprecations?hl=en';
+let lastGeminiModelCatalog: GeminiModelCatalog | null = null;
+let pendingGeminiModelCatalog: Promise<GeminiModelCatalog> | null = null;
+let operationCancelled = false;
+const activeChildProcesses = new Set<ChildProcessWithoutNullStreams>();
+const activeAiAbortControllers = new Set<AbortController>();
 const DEFAULT_GENERATOR = DEFAULT_GENERATOR_TEMPLATE;
 const DEFAULT_SOLUTION = `#include <bits/stdc++.h>
 using namespace std;
@@ -76,9 +82,65 @@ async function readSettings(): Promise<Settings> {
     const savedSettings = JSON.parse(await fs.readFile(settingsFile(), 'utf8')) as Record<string, unknown>;
     delete savedSettings.themisTestPrefix;
     const saved = savedSettings as Partial<Settings>;
-    return { ...DEFAULT_SETTINGS, ...saved, models: { ...DEFAULT_SETTINGS.models, ...saved.models } };
+    return { ...DEFAULT_SETTINGS, ...saved, provider: 'gemini', models: { ...DEFAULT_SETTINGS.models, ...saved.models } };
   }
   catch { return { ...DEFAULT_SETTINGS, models: { ...DEFAULT_SETTINGS.models } }; }
+}
+
+function htmlText(value: string): string {
+  return value.replace(/<[^>]*>/g, ' ').replace(/&nbsp;|&#160;/gi, ' ').replace(/&amp;/gi, '&').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/&quot;/gi, '"').replace(/&#39;|&apos;/gi, "'").replace(/\s+/g, ' ').trim();
+}
+
+function parseGeminiModelCatalog(html: string): GeminiModelInfo[] {
+  const sections = [...html.matchAll(/<h2\b[^>]*>([\s\S]*?)<\/h2>([\s\S]*?)(?=<h2\b|$)/gi)];
+  const modelMap = new Map<string, GeminiModelInfo>();
+  const recommendationNames: string[] = [];
+
+  for (const [, , sectionHtml] of sections) {
+    for (const [, noteHtml] of sectionHtml.matchAll(/<aside\b[^>]*class="[^"]*note[^"]*"[^>]*>([\s\S]*?)<\/aside>/gi)) {
+      const note = htmlText(noteHtml);
+      recommendationNames.push(...(note.match(/\d+(?:\.\d+)?\s+Flash(?:-Lite)?/gi) ?? []));
+    }
+
+    for (const [, rowHtml] of sectionHtml.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)) {
+      const cells = [...rowHtml.matchAll(/<td\b[^>]*>([\s\S]*?)<\/td>/gi)].map(([, cell]) => cell);
+      if (cells.length < 3) continue;
+      const modelId = htmlText(cells[0].match(/<code\b[^>]*>([\s\S]*?)<\/code>/i)?.[1] ?? '');
+      if (!/^gemini-\d+(?:\.\d+)?-(?:flash|pro)(?:-lite)?(?:-\d+)?(?:-preview[-\w.]*)?$/i.test(modelId)) continue;
+      const shutdownDate = htmlText(cells[2]);
+      const replacement = htmlText(cells[3] ?? '').match(/\bgemini-[a-z0-9.-]+\b/i)?.[0] ?? '';
+      modelMap.set(modelId, { id: modelId, shutdownDate, replacement, recommended: false, shutdown: /\brow-gray\b/i.test(rowHtml), preview: /preview/i.test(modelId) });
+    }
+  }
+
+  for (const name of recommendationNames) {
+    const normalizedName = name.toLowerCase().replace(/[^a-z0-9]/g, '');
+    for (const model of modelMap.values()) {
+      const normalizedId = model.id.toLowerCase().replace(/^gemini-/, '').replace(/[^a-z0-9]/g, '');
+      if (normalizedId === normalizedName) model.recommended = true;
+    }
+  }
+
+  return [...modelMap.values()].sort((a, b) => Number(b.recommended) - Number(a.recommended) || a.id.localeCompare(b.id));
+}
+
+async function fetchGeminiModelCatalog(): Promise<GeminiModelCatalog> {
+  try {
+    const response = await fetch(GEMINI_DEPRECATIONS_URL, {
+      signal: AbortSignal.timeout(10_000),
+      headers: { accept: 'text/html', 'user-agent': 'CP-Test-Studio' },
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const models = parseGeminiModelCatalog(await response.text());
+    if (!models.length) throw new Error('Không nhận diện được danh sách model trong trang tài liệu.');
+    const catalog: GeminiModelCatalog = { models, fetchedAt: new Date().toISOString(), stale: false };
+    lastGeminiModelCatalog = catalog;
+    return catalog;
+  } catch (error) {
+    const warning = `Không tải được dữ liệu model mới nhất từ Google: ${(error as Error).message}`;
+    if (lastGeminiModelCatalog) return { ...lastGeminiModelCatalog, stale: true, warning };
+    return { models: [], fetchedAt: '', stale: true, warning };
+  }
 }
 
 async function writeJson(file: string, data: unknown) {
@@ -116,6 +178,7 @@ async function readProject(id: string): Promise<Project> {
 
 function runChild(command: string, args: string[], options: { cwd?: string; input?: string; timeoutMs?: number; outputLimit?: number; env?: NodeJS.ProcessEnv } = {}): Promise<RunResult> {
   return new Promise((resolve, reject) => {
+    if (operationCancelled) { reject(new Error('CANCELLED_OPERATION')); return; }
     const start = Date.now();
     let stdout = '', stderr = '', timedOut = false, outputLimited = false;
     let stdinError: Error | null = null;
@@ -123,6 +186,7 @@ function runChild(command: string, args: string[], options: { cwd?: string; inpu
     let child: ChildProcessWithoutNullStreams;
     try { child = spawn(command, args, { cwd: options.cwd, env: options.env ?? childEnvironment(), windowsHide: true, shell: false, stdio: ['pipe', 'pipe', 'pipe'] }); }
     catch (error) { reject(error); return; }
+    activeChildProcesses.add(child);
     const collect = (target: 'stdout' | 'stderr', chunk: Buffer) => {
       const left = limit - Buffer.byteLength(target === 'stdout' ? stdout : stderr, 'utf8');
       if (left <= 0) { outputLimited = true; child.kill(); return; }
@@ -140,10 +204,12 @@ function runChild(command: string, args: string[], options: { cwd?: string; inpu
       // Windows reports this closed pipe as EOF; it must not become an uncaught main-process error.
       if (error.code !== 'EPIPE' && error.code !== 'EOF' && error.code !== 'ERR_STREAM_DESTROYED') stdinError = error;
     });
-    child.on('error', reject);
+    child.on('error', (error) => { activeChildProcesses.delete(child); reject(error); });
     const timer = options.timeoutMs ? setTimeout(() => { timedOut = true; child.kill(); }, options.timeoutMs) : undefined;
     child.on('close', (exitCode) => {
+      activeChildProcesses.delete(child);
       if (timer) clearTimeout(timer);
+      if (operationCancelled) { reject(new Error('CANCELLED_OPERATION')); return; }
       if (stdinError) { reject(new Error(`Không ghi được input cho chương trình: ${stdinError.message}`)); return; }
       resolve({ stdout, stderr, exitCode, runtimeMs: Date.now() - start, timedOut, outputLimited });
     });
@@ -206,6 +272,10 @@ async function aiKey(provider: Provider): Promise<string> {
 }
 
 async function callAi(request: AiRequest, test = false): Promise<AiResponse> {
+  if (operationCancelled) throw new Error('CANCELLED_OPERATION');
+  const abortController = new AbortController();
+  activeAiAbortControllers.add(abortController);
+  try {
   const settings = await readSettings();
   const provider = request.provider ?? settings.provider;
   const model = request.model || settings.models[provider];
@@ -217,7 +287,7 @@ async function callAi(request: AiRequest, test = false): Promise<AiResponse> {
     const result = await client.chat.completions.create({
       model, messages: [{ role: 'user', content }], max_tokens: test ? 24 : request.maxOutputTokens ?? 3000,
       ...(request.outputFormat === 'json' ? { response_format: { type: 'json_object' as const } } : {}),
-    });
+    }, { signal: abortController.signal });
     return {
       text: result.choices[0]?.message?.content ?? '',
       usage: result.usage ? { inputTokens: result.usage.prompt_tokens, outputTokens: result.usage.completion_tokens, totalTokens: result.usage.total_tokens } : undefined,
@@ -228,13 +298,16 @@ async function callAi(request: AiRequest, test = false): Promise<AiResponse> {
   if (request.image) parts.push({ inlineData: request.image });
   const result = await client.models.generateContent({
     model, contents: [{ role: 'user', parts }],
-    config: { maxOutputTokens: test ? 24 : request.maxOutputTokens ?? 3000, ...(request.outputFormat === 'json' ? { responseMimeType: 'application/json' } : {}) },
+    config: { maxOutputTokens: test ? 24 : request.maxOutputTokens ?? 3000, abortSignal: abortController.signal, ...(request.outputFormat === 'json' ? { responseMimeType: 'application/json' } : {}) },
   });
   const usage = result.usageMetadata;
   return {
     text: result.text ?? '',
     usage: usage ? { inputTokens: usage.promptTokenCount, outputTokens: usage.candidatesTokenCount, totalTokens: usage.totalTokenCount } : undefined,
   };
+  } finally {
+    activeAiAbortControllers.delete(abortController);
+  }
 }
 
 function aiRequestCacheKey(request: AiRequest, provider: Provider, model: string, promptVersion: string): string {
@@ -250,6 +323,13 @@ function createWindow() {
     backgroundColor: '#f5f7fb', show: false,
     webPreferences: { preload: path.join(__dirname, '../preload/index.js'), contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    try {
+      const externalUrl = new URL(url);
+      if (externalUrl.protocol === 'https:' && externalUrl.hostname === 'ai.google.dev') void shell.openExternal(externalUrl.toString());
+    } catch { /* Ignore malformed external links. */ }
+    return { action: 'deny' };
+  });
   mainWindow.once('ready-to-show', () => mainWindow?.show());
   if (process.env.ELECTRON_RENDERER_URL) void mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL);
   else void mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
@@ -262,6 +342,13 @@ app.whenReady().then(async () => {
   await Promise.all([fs.mkdir(projectsRoot(), { recursive: true }), fs.mkdir(buildRoot(), { recursive: true })]);
   createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
+});
+
+ipcMain.handle('operation:reset-cancellation', () => { operationCancelled = false; });
+ipcMain.handle('operation:cancel-current', () => {
+  operationCancelled = true;
+  for (const controller of activeAiAbortControllers) controller.abort();
+  for (const child of activeChildProcesses) child.kill();
 });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 
@@ -364,6 +451,12 @@ ipcMain.handle('projects:image:read', async (_event, projectId: string, imageId:
 });
 
 ipcMain.handle('settings:get', readSettings);
+ipcMain.handle('settings:gemini-model-catalog', () => {
+  if (!pendingGeminiModelCatalog) {
+    pendingGeminiModelCatalog = fetchGeminiModelCatalog().finally(() => { pendingGeminiModelCatalog = null; });
+  }
+  return pendingGeminiModelCatalog;
+});
 ipcMain.handle('settings:save', async (_event, settings: Settings) => writeJson(settingsFile(), settings));
 ipcMain.handle('settings:key:save', async (_event, provider: Provider, key: string) => {
   if (!safeStorage.isEncryptionAvailable()) throw new Error('Không thể mã hóa API key trên máy này.');
@@ -485,6 +578,7 @@ ipcMain.handle('tests:generate', async (_event, projectId: string, rawPlan: Test
         try {
           run = await runChild(binaryPath(projectId, 'generator'), generatorArgs(runSeed, testIndex, group), { timeoutMs: GENERATOR_TIMEOUT_MS, outputLimit: MAX_GENERATOR_OUTPUT, cwd: path.join(buildRoot(), projectId) });
         } catch (error) {
+          if (operationCancelled) throw error;
           log.errors++;
           lastRejected = { id: randomUUID(), name: `ERROR${String(globalIndex).padStart(2, '0')}`, input: '', output: '', status: 'error', stderr: (error as Error).message, groupId: group.id, groupName: group.name, testIndex, seed: runSeed, mode: group.mode, params: group.params, statementVersion: sourceVersion, generatorVersion: sha256(source) };
           continue;
